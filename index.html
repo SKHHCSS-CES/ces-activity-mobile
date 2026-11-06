@@ -1253,19 +1253,19 @@
           psDiv.className = "playsafe-box";
           psDiv.innerHTML = `
             <div style="font-size:0.9rem; font-weight:800; color:#b45309; margin-bottom:4px;">
-              🛟 Play-Safe Builder Unlocked! Tap 1 -> 2 -> 3 to build your sentence, then read it aloud or tap Send:
+              🛟 Play-Safe Builder: Tap 1 -> 2 -> 3 to build your sentence:
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">1. Tap <span style="color:var(--teal);">[ care ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">1. <span style="color:var(--teal);">[ care ]</span>:</div>
             <div class="ps-row" id="psCareRow">
               <button type="button" class="ps-chip" data-val="I care about you">💛 I care about you</button>
               <button type="button" class="ps-chip" data-val="I like being with you">💛 I like being with you</button>
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">2. Tap <span style="color:var(--teal);">[ way to cope ] + [ reason ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">2. <span style="color:var(--teal);">[ way to cope ] + [ reason ]</span>:</div>
             <div class="ps-row" id="psWayRow">
               <button type="button" class="ps-chip" data-val="${wayOption1.text}">${wayOption1.label}</button>
               <button type="button" class="ps-chip" data-val="${wayOption2.text}">${wayOption2.label}</button>
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">3. Tap <span style="color:var(--teal);">[ suggestion ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">3. <span style="color:var(--teal);">[ suggestion ]</span>:</div>
             <div class="ps-row" id="psSugRow">
               <button type="button" class="ps-chip" data-val="${sugOption1.text}">${sugOption1.label}</button>
               <button type="button" class="ps-chip" data-val="${sugOption2.text}">${sugOption2.label}</button>
@@ -1382,22 +1382,20 @@
             <span id="moreHelpArrow">▾</span>
           </button>
           <div id="moreHelpBody" hidden style="font-size:0.84rem; color:var(--muted); font-weight:600; line-height:1.45; padding:9px 11px; border-radius:9px; background:#fff; border:1px solid var(--teal-border);">
-            <div style="display:grid; grid-template-columns:7.4em 1fr; column-gap:8px; row-gap:7px; align-items:start;">
-              <div style="white-space:nowrap;">• <span style="color:var(--teal); font-weight:800;">[ care ]</span>:</div>
+            <div style="display:grid; grid-template-columns:max-content 1fr; column-gap:10px; row-gap:7px; align-items:start;">
+              <div style="white-space:nowrap;">• <span style="color:var(--teal); font-weight:800;">[ way to cope ]</span>:</div>
               <div>
-                <div><em>"I care about you"</em></div>
-                <div><em>"I like being with you"</em></div>
+                <div><em>"avoid quiet places"</em></div>
+                <div><em>"stay away from pornography"</em></div>
+                <div><em>"set limits of intimacy"</em></div>
+                <div><em>"join healthy activities"</em></div>
               </div>
               <div style="white-space:nowrap;">• <span style="color:var(--teal); font-weight:800;">[ reason ]</span>:</div>
               <div>
                 <div><em>"being alone in a quiet place is unsafe"</em></div>
                 <div><em>"18+ media gives wrong ideas about love"</em></div>
                 <div><em>"true love respects limits"</em></div>
-              </div>
-              <div style="white-space:nowrap;">• <span style="color:var(--teal); font-weight:800;">[ suggestion ]</span>:</div>
-              <div>
-                <div><em>"go to a café / library"</em></div>
-                <div><em>"play sports / basketball / cycle"</em></div>
+                <div><em>"sports use our energy well"</em></div>
               </div>
             </div>
           </div>
