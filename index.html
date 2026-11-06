@@ -1505,27 +1505,30 @@
         const t = studentText.toLowerCase().trim();
         const trig = (step.triggerName || "").toLowerCase();
 
-        const quietWayWords = [
-          "quiet", "empty", "flat", "bedroom", "room", "upstairs", "house", "home", "locked", "lock", "door",
-          "public", "cafe", "café", "library", "lounge", "downstairs", "outside", "study", "crowded", "alone",
-          "canteen", "restaurant", "mcdonald", "starbucks", "mall", "shop", "park", "bright", "people around", "other people"
-        ];
-        const pornWayWords = [
-          "porn", "pornography", "18+", "18 plus", "eighteen", "video", "videos", "clip", "movie",
-          "website", "site", "web", "page", "tablet", "ipad", "phone", "screen", "turn off", "turn it off",
-          "close", "switch off", "put away", "delete", "hide", "don't watch", "dont watch", "not watch", "stop watching",
-          "don't look", "dont look", "not look", "adult", "media", "bad idea", "wrong idea", "board game", "card game", "project", "homework"
-        ];
-        const touchOrSportWords = [
-          "limit", "limits", "intimacy", "intimate", "boundary", "boundaries", "respect",
-          "touch", "touching", "kiss", "kissing", "hold", "holding", "hug", "hugging", "close", "cross the line", "uncomfortable", "not ready", "prove", "body",
-          "healthy", "activity", "activities", "sport", "sports", "basketball", "bowling", "badminton", "football", "soccer", "volleyball", "tennis", "table tennis", "swim", "swimming",
-          "cycling", "cycle", "bike", "bicycle", "run", "running", "jog", "jogging", "walk", "walking", "exercise", "ball", "volunteer", "harbourfront", "outside", "sun", "fresh air", "game"
-        ];
+        // Require at least 3 words so single words ("classroom", "cafe", "video") never get a pass
+        const words = t.replace(/[^a-z0-9\s\+']/gi, " ").split(/\s+/).filter(Boolean);
+        if (words.length < 3) {
+          return {
+            matched: false,
+            wrongWayHint: `💬 Saying just 1 or 2 words ("${studentText.trim()}") is too short! Please speak or type a full phrase or sentence using: [ care ], but we should [ way to cope ] because [ reason ]. Let's [ suggestion ] instead!`
+          };
+        }
 
-        const hasQuiet = quietWayWords.some(w => t.includes(w));
-        const hasPorn = pornWayWords.some(w => t.includes(w));
-        const hasTouchOrSport = touchOrSportWords.some(w => t.includes(w));
+        // Require an action/intent cue (refusal, obligation, or suggestion verb/phrase) + whole-word matching (\b)
+        const actionCueRx = /\b(no|not|don't|dont|do not|never|stop|refuse|avoid|stay away|turn off|switch off|close|put away|leave|should|shouldn't|should not|must|cannot|can't|cant|unsafe|dangerous|wrong|bad|respect|set|keep|limit|limits|boundary|boundaries|let's|lets|go to|sit in|sit at|study in|study at|stay in|play|join|do|cycle|walk|run|instead|care|like|love)\b/i;
+        const hasActionCue = actionCueRx.test(t);
+
+        const quietAvoidRx = /\b(avoid|not|don't|dont|no|never|unsafe|dangerous|leave|shouldn't|should not|can't|cannot)\b.*\b(quiet|empty|flat|bedroom|room|upstairs|house|home|locked|lock|door|alone)\b|\b(quiet|empty|flat|bedroom|room|upstairs|locked|lock|door|alone)\b.*\b(unsafe|dangerous|bad|wrong|risky)\b/i;
+        const quietPublicRx = /\b(public|cafe|café|library|lounge|downstairs|canteen|restaurant|mcdonald|starbucks|mall|park|bright|people around|other people)\b/i;
+        const hasQuiet = quietAvoidRx.test(t) || (hasActionCue && quietPublicRx.test(t));
+
+        const pornRefuseRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|bad|wrong|twist|twists)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|site|web|page|tablet|ipad|phone|screen|adult|media)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|site|web|page|tablet|ipad|phone|screen|adult|media)\b.*\b(off|away|close|wrong|bad|twist|twists|harmful|stop)\b/i;
+        const pornAltRx = /\b(let's|lets|instead|focus|finish|do|play)\b.*\b(board game|card game|project|homework|study|basketball|sport|sports)\b/i;
+        const hasPorn = pornRefuseRx.test(t) || pornAltRx.test(t);
+
+        const touchLimitRx = /\b(limit|limits|intimacy|intimate|boundary|boundaries|respect|uncomfortable|not ready|cross the line)\b|\b(no|not|don't|dont|stop|never|shouldn't)\b.*\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|close|prove)\b/i;
+        const touchSportRx = /\b(healthy|activity|activities|sport|sports|basketball|bowling|badminton|football|soccer|volleyball|tennis|table tennis|swim|swimming|cycling|cycle|bike|bicycle|run|running|jog|jogging|walk|walking|exercise|volunteer|harbourfront|fresh air)\b/i;
+        const hasTouchOrSport = hasActionCue && (touchLimitRx.test(t) || touchSportRx.test(t));
 
         // 1. Quiet Place situations (Try 1 in Demo, Leon, Chloe)
         if (trig.includes("quiet place")) {
