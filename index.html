@@ -671,8 +671,8 @@
         </div>
         <div id="transitionControls" hidden>
           <div style="display:flex; gap:8px; flex-wrap:nowrap; align-items:center;">
-            <button type="button" class="continue-btn" id="continueNextTryBtn">➡️ Continue to Next Try</button>
-            <button type="button" class="top-btn" id="retrySameTryBtn" style="flex:0 0 auto; padding:10px 14px; font-size:0.88rem; line-height:1.2; font-weight:800; white-space:nowrap; border-radius:10px;">🔄 Retry Same Try</button>
+            <button type="button" class="continue-btn" id="continueNextTryBtn">➡️ CONTINUE</button>
+            <button type="button" class="top-btn" id="retrySameTryBtn" style="flex:0 0 auto; padding:10px 16px; font-size:0.9rem; line-height:1.2; font-weight:800; white-space:nowrap; border-radius:10px;">🔄 RETRY</button>
           </div>
         </div>
       </div>
@@ -1134,33 +1134,20 @@
         liveInputControls.hidden = false;
       }
 
-      function showTransitionPause(buttonLabel, isWarn, seconds, onAdvance) {
+      function showTransitionPause(buttonLabel, isWarn, _seconds, onAdvance) {
         clearPendingTransition();
         clearInputBoxCompletely();
         liveInputControls.hidden = true;
         transitionControls.hidden = false;
         continueNextTryBtn.className = isWarn ? "continue-btn warn-mode" : "continue-btn";
-
-        let remaining = seconds;
-        const updateBtnText = () => {
-          continueNextTryBtn.textContent = `${buttonLabel} (${remaining}s)`;
-        };
-        updateBtnText();
+        continueNextTryBtn.textContent = buttonLabel || "➡️ CONTINUE";
+        retrySameTryBtn.textContent = "🔄 RETRY";
 
         pendingNextCallback = () => {
           clearPendingTransition();
           onAdvance();
           scrollToStageTop();
         };
-
-        transitionTimer = setInterval(() => {
-          remaining -= 1;
-          if (remaining <= 0) {
-            if (pendingNextCallback) pendingNextCallback();
-          } else {
-            updateBtnText();
-          }
-        }, 1000);
       }
 
       continueNextTryBtn.addEventListener("click", () => {
@@ -1308,41 +1295,50 @@
           if (moreHelpArrow) moreHelpArrow.textContent = "▾";
           setFramesCollapse(false);
           const trig = (step.triggerName || "").toLowerCase();
-          let wayOption1 = { label: "🚪 avoid quiet places because a quiet room alone is unsafe", text: "avoid quiet places because a quiet room alone is unsafe" };
-          let wayOption2 = { label: "🛑 set limits of intimacy because true love respects limits", text: "set limits of intimacy because true love respects limits" };
-          let sugOption1 = { label: "☕ go to a bright public café", text: "go to a bright public café" };
-          let sugOption2 = { label: "🏀 play sports together", text: "play sports together" };
+          // Row 2 ([ way to cope ] + [ reason ]) & Row 3 ([ suggestion ]): 1 Correct + 1 Obviously Wrong
+          let wayCorrect = { label: "🚪 avoid quiet places because a quiet room alone is unsafe", text: "avoid quiet places because a quiet room alone is unsafe" };
+          let wayWrong = { label: "🤫 keep our door locked because nobody will know we are inside", text: "keep our door locked because nobody will know we are inside" };
+          let sugCorrect = { label: "☕ go to a bright public café", text: "go to a bright public café" };
+          let sugWrong = { label: "🛋️ stay inside this quiet room for just ten more minutes", text: "stay inside this quiet room for just ten more minutes" };
 
           if (trig.includes("pornography")) {
-            wayOption1 = { label: "📵 stay away from pornography because 18+ media gives wrong ideas", text: "stay away from pornography because 18+ media gives wrong ideas" };
-            wayOption2 = { label: "🛑 turn off the 18+ screen because it twists our values", text: "stay away from pornography and turn off the 18+ screen" };
-            sugOption1 = { label: "📚 finish our project / play board games", text: "play a board game or finish our project" };
-            sugOption2 = { label: "🏀 play basketball outside", text: "play basketball outside" };
+            wayCorrect = { label: "📵 stay away from pornography because 18+ media gives wrong ideas", text: "stay away from pornography because 18+ media gives wrong ideas" };
+            wayWrong = { label: "👀 watch the 18+ video together because everyone at school talks about it", text: "watch the 18+ video together because everyone at school talks about it" };
+            sugCorrect = { label: "🏀 play basketball or board games together", text: "play basketball or board games together" };
+            sugWrong = { label: "📱 only watch the 18+ clip for one minute and delete it", text: "only watch the 18+ clip for one minute and delete it" };
           } else if (!trig.includes("quiet place")) {
-            wayOption1 = { label: "🛑 set limits of intimacy because true love respects limits", text: "set limits of intimacy because true love respects limits" };
-            wayOption2 = { label: "🏀 join healthy activities because sports use our energy well", text: "join healthy activities because sports use our energy well" };
-            sugOption1 = { label: "🏀 play basketball / bowling together", text: "play sports together" };
-            sugOption2 = { label: "🚴 go cycling at the harbourfront", text: "go cycling at the harbourfront" };
+            wayCorrect = { label: "🛑 set limits of intimacy because true love respects limits", text: "set limits of intimacy because true love respects limits" };
+            wayWrong = { label: "💋 give in to close touch because saying no might make you angry", text: "give in to close touch because saying no might make you angry" };
+            sugCorrect = { label: "🚴 play sports or go cycling at the harbourfront", text: "play sports or go cycling at the harbourfront" };
+            sugWrong = { label: "🌙 move to a darker corner where nobody can see us", text: "move to a darker corner where nobody can see us" };
           }
+
+          // Vary left/right placement so students read both choices instead of always tapping the left button
+          const swapWay = (step.tryNumber % 2 === 0);
+          const swapSug = (step.tryNumber % 2 === 1);
+          const wayOption1 = swapWay ? wayWrong : wayCorrect;
+          const wayOption2 = swapWay ? wayCorrect : wayWrong;
+          const sugOption1 = swapSug ? sugWrong : sugCorrect;
+          const sugOption2 = swapSug ? sugCorrect : sugWrong;
 
           const psDiv = document.createElement("div");
           psDiv.id = "playSafeRescueBox";
           psDiv.className = "playsafe-box";
           psDiv.innerHTML = `
             <div style="font-size:0.9rem; font-weight:800; color:#b45309; margin-bottom:4px;">
-              🛟 Play-Safe Builder: Tap 1 -> 2 -> 3 to build your sentence:
+              🛟 Play-Safe Builder: Choose the SAFE option in 1 -> 2 -> 3:
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">1. <span style="color:var(--teal);">[ care ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">1. <span style="color:var(--teal);">[ care ]</span> (Pick any 1):</div>
             <div class="ps-row" id="psCareRow">
               <button type="button" class="ps-chip" data-val="I care about you">💛 I care about you</button>
               <button type="button" class="ps-chip" data-val="I like being with you">💛 I like being with you</button>
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">2. <span style="color:var(--teal);">[ way to cope ] + [ reason ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">2. <span style="color:var(--teal);">[ way to cope ] + [ reason ]</span> (1 right, 1 wrong!):</div>
             <div class="ps-row" id="psWayRow">
               <button type="button" class="ps-chip" data-val="${wayOption1.text}">${wayOption1.label}</button>
               <button type="button" class="ps-chip" data-val="${wayOption2.text}">${wayOption2.label}</button>
             </div>
-            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">3. <span style="color:var(--teal);">[ suggestion ]</span>:</div>
+            <div style="font-size:0.82rem; font-weight:800; color:var(--teal);">3. <span style="color:var(--teal);">[ suggestion ]</span> (1 right, 1 wrong!):</div>
             <div class="ps-row" id="psSugRow">
               <button type="button" class="ps-chip" data-val="${sugOption1.text}">${sugOption1.label}</button>
               <button type="button" class="ps-chip" data-val="${sugOption2.text}">${sugOption2.label}</button>
@@ -1354,20 +1350,18 @@
           `;
           missionHud.appendChild(psDiv);
 
-          function ensureDefaultPickedIfNone() {
-            ["#psCareRow", "#psWayRow", "#psSugRow"].forEach(rowSel => {
-              if (!psDiv.querySelector(`${rowSel} .ps-chip.picked`)) {
-                const firstChip = psDiv.querySelector(`${rowSel} .ps-chip`);
-                if (firstChip) firstChip.classList.add("picked");
-              }
-            });
+          function allThreeRowsPicked() {
+            return Boolean(
+              psDiv.querySelector("#psCareRow .ps-chip.picked") &&
+              psDiv.querySelector("#psWayRow .ps-chip.picked") &&
+              psDiv.querySelector("#psSugRow .ps-chip.picked")
+            );
           }
 
           function buildPlaySafeSentence() {
-            ensureDefaultPickedIfNone();
-            const c = psDiv.querySelector("#psCareRow .ps-chip.picked")?.getAttribute("data-val") || "I care about you";
-            const w = psDiv.querySelector("#psWayRow .ps-chip.picked")?.getAttribute("data-val") || wayOption1.text;
-            const s = psDiv.querySelector("#psSugRow .ps-chip.picked")?.getAttribute("data-val") || sugOption1.text;
+            const c = psDiv.querySelector("#psCareRow .ps-chip.picked")?.getAttribute("data-val") || "";
+            const w = psDiv.querySelector("#psWayRow .ps-chip.picked")?.getAttribute("data-val") || "";
+            const s = psDiv.querySelector("#psSugRow .ps-chip.picked")?.getAttribute("data-val") || "";
             return `${c}, but we should ${w}. Let's ${s} instead!`;
           }
 
@@ -1385,14 +1379,25 @@
           });
 
           psDiv.querySelector("#psFillBtn").addEventListener("click", function () {
+            const origText = "✍️ Put Sentence in Box";
+            if (!allThreeRowsPicked()) {
+              this.textContent = "👆 Pick 1 choice in rows 1, 2 & 3 first!";
+              setTimeout(() => { this.textContent = origText; }, 1600);
+              return;
+            }
             textInput.value = buildPlaySafeSentence();
             handleLiveInput();
             textInput.focus();
-            const origText = "✍️ Put Sentence in Box";
             this.textContent = "✅ Added to Box!";
             setTimeout(() => { this.textContent = origText; }, 1200);
           });
-          psDiv.querySelector("#psListenBtn").addEventListener("click", () => {
+          psDiv.querySelector("#psListenBtn").addEventListener("click", function () {
+            const origText = "🔊 Listen & Read Aloud";
+            if (!allThreeRowsPicked()) {
+              this.textContent = "👆 Pick 1, 2 & 3 first!";
+              setTimeout(() => { this.textContent = origText; }, 1600);
+              return;
+            }
             speakText(buildPlaySafeSentence(), "female");
           });
         }
@@ -1699,7 +1704,7 @@
         const hasReasonDetail = reasonCueRx.test(t);
 
         const quietAvoidRx = /\b(avoid|not|don't|dont|do not|no|never|unsafe|dangerous|leave|shouldn't|should not|can't|cannot|bad|wrong|risky|scared|afraid|uncomfortable|mum|mom|dad|parents)\b.*\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|house|home|locked|lock|door|alone|dark|stay here|go up|come up|inside)\b|\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|locked|lock|door|alone|dark)\b.*\b(unsafe|dangerous|bad|wrong|risky|no|not|avoid|shouldn't|should not|don't|dont)\b|\b(avoid quiet|not go up|don't go up|dont go up|don't lock|dont lock|keep the door open|open the door|not stay alone|don't stay alone|mum will be angry|parents will be angry|parents are not home)\b/i;
-        const quietPublicRx = /\b(public|cafe|café|coffee|library|lounge|downstairs|canteen|restaurant|mcdonald|mcdonald's|kfc|starbucks|mall|shopping|park|bright|people around|other people|food court|tea|bubble tea|eat|study room|clubhouse|outside|lobby|cinema|walk)\b/i;
+        const quietPublicRx = /\b(public|cafe|café|coffee|library|lounge|downstairs|canteen|restaurant|mcdonald|mcdonald's|kfc|starbucks|mall|shopping|park|bright|people around|other people|food court|tea|bubble tea|eat|study room|clubhouse|outside|lobby|cinema|walk|sport|sports|basketball|badminton|bowling|cycling|football|volleyball|tennis|exercise)\b/i;
 
         const pornRefuseRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|bad|wrong|twist|twists|harmful|disrespect|unhealthy)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media)\b.*\b(off|away|close|wrong|bad|twist|twists|harmful|stop|no|not|don't|dont)\b|\b(stay away from pornography|turn it off|close it|put your phone away|close the tablet|wrong ideas|bad for our mind)\b/i;
         const pornReasonOrAltRx = /\b(stay away from pornography|wrong|bad|twist|twists|harmful|fake|idea|ideas|value|values|respect|mind|because|instead|let's|lets|board game|card game|game|project|homework|study|basketball|sport|sports|chat|talk|eat|drink|music|walk)\b/i;
@@ -1714,22 +1719,27 @@
           extractedSuggestion = sugMatch[0].trim();
         }
 
+        const wrongWayRx = /\b(keep our door locked|nobody will know we are inside|watch the 18\+ video together|everyone at school talks about it|give in to close touch|saying no might make you angry)\b/i;
+        const wrongSugRx = /\b(stay inside this quiet room|ten more minutes|10 more minutes|only watch the 18\+ clip|for one minute and delete it|move to a darker corner|nobody can see us)\b/i;
+        const pickedWrongWay = wrongWayRx.test(t);
+        const pickedWrongSuggestion = wrongSugRx.test(t);
+
         let hasWayOrReason = false;
         let hasSuggestion = false;
         let usedOtherSceneWay = false;
 
         if (trig.includes("quiet place")) {
-          hasWayOrReason = quietAvoidRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|shouldn't|should not|avoid|never|can't|cannot|unsafe|dangerous|risky)\b/i.test(t));
-          hasSuggestion = quietPublicRx.test(t);
-          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion) && (pornRefuseRx.test(t) || touchLimitRx.test(t));
+          hasWayOrReason = !pickedWrongWay && (quietAvoidRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|shouldn't|should not|avoid|never|can't|cannot|unsafe|dangerous|risky)\b/i.test(t)));
+          hasSuggestion = !pickedWrongSuggestion && quietPublicRx.test(t);
+          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (pornRefuseRx.test(t) || touchLimitRx.test(t));
         } else if (trig.includes("pornography")) {
-          hasWayOrReason = pornRefuseRx.test(t);
-          hasSuggestion = pornReasonOrAltRx.test(t);
-          usedOtherSceneWay = (!hasWayOrReason) && (quietAvoidRx.test(t) || touchLimitRx.test(t));
+          hasWayOrReason = !pickedWrongWay && pornRefuseRx.test(t);
+          hasSuggestion = !pickedWrongSuggestion && pornReasonOrAltRx.test(t);
+          usedOtherSceneWay = (!hasWayOrReason && !pickedWrongWay) && (quietAvoidRx.test(t) || touchLimitRx.test(t));
         } else {
-          hasWayOrReason = touchLimitRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|stop|shouldn't|should not|wait|respect)\b/i.test(t));
-          hasSuggestion = touchSportRx.test(t);
-          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion) && (quietAvoidRx.test(t) || pornRefuseRx.test(t));
+          hasWayOrReason = !pickedWrongWay && (touchLimitRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|stop|shouldn't|should not|wait|respect)\b/i.test(t)));
+          hasSuggestion = !pickedWrongSuggestion && touchSportRx.test(t);
+          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietAvoidRx.test(t) || pornRefuseRx.test(t));
         }
 
         return {
@@ -1740,7 +1750,9 @@
           hasReasonDetail,
           hasSuggestion,
           usedOtherSceneWay,
-          extractedSuggestion: extractedSuggestion || (hasSuggestion ? raw : ""),
+          pickedWrongWay,
+          pickedWrongSuggestion,
+          extractedSuggestion: hasSuggestion ? (extractedSuggestion || raw) : "",
           extractedWay: hasWayOrReason ? raw : ""
         };
       }
@@ -1813,6 +1825,16 @@
         const trig = (step.triggerName || "").toLowerCase();
         const studentIdea = extractStudentSuggestedPlaceOrActivity(studentText, sceneMem);
 
+        if (curParts.pickedWrongWay || curParts.pickedWrongSuggestion) {
+          if (trig.includes("quiet place")) {
+            return `Wait—you just said we could keep the door locked or stay in this quiet room for ten more minutes! Are you really saying yes to staying alone in here, or did you mean we should go somewhere public?`;
+          }
+          if (trig.includes("pornography")) {
+            return `Huh? You just said we could watch the 18+ clip together or look at it for one minute! Do you actually want to watch it, or are you telling me to turn it off?`;
+          }
+          return `Wait—you just talked about giving in or moving to a darker corner where nobody can see us! That makes things even more tempting—what boundaries do you really want us to set?`;
+        }
+
         // React directly to specific everyday excuses/topics students often say
         if (/\bhungry|\beat|\bfood|\blunch|\bdinner|\bsnack|\bmcdonald|\bkfc|\brestaurant|\bcanteen|\bbubble tea\b/i.test(t)) {
           if (!curParts.hasWayOrReason && !sceneMem.hasWayOrReason) {
@@ -1858,6 +1880,15 @@
 
       function buildSpontaneousVagueHint(step, studentText, curParts, sceneMem) {
         const trig = (step.triggerName || "").toLowerCase();
+        if (curParts.pickedWrongWay && curParts.pickedWrongSuggestion) {
+          return `⚠️ Oops! Both Row 2 and Row 3 in your sentence used the WRONG (unsafe) choices! In the Play-Safe Builder, pick the SAFE [ way to cope ] + [ reason ] AND the SAFE [ suggestion ]!`;
+        }
+        if (curParts.pickedWrongWay) {
+          return `⚠️ Careful! In Row 2 ([ way to cope ] + [ reason ]), you picked the unsafe choice! Pick "${step.copingWay}" instead and try again!`;
+        }
+        if (curParts.pickedWrongSuggestion) {
+          return `⚠️ Careful! In Row 3 ([ suggestion ]), staying for "just ten minutes", watching for "one minute", or going to a "darker corner" is still unsafe! Pick the safe public place or healthy sport instead!`;
+        }
         const combinedWay = curParts.hasWayOrReason || sceneMem.hasWayOrReason;
         const combinedSug = curParts.hasSuggestion || sceneMem.hasSuggestion;
 
@@ -1932,8 +1963,9 @@
         const hadPriorTurns = sceneMemory.turns.length > 0;
         const combinedHasWay = curParts.hasWayOrReason || sceneMemory.hasWayOrReason;
         const combinedHasSug = curParts.hasSuggestion || sceneMemory.hasSuggestion;
-        const isSingleTurnFull = !toneCheck.isRude && !isLocalGiveIn && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 5;
-        const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 2;
+        const hasWrongBuilderChoice = Boolean(curParts.pickedWrongWay || curParts.pickedWrongSuggestion);
+        const isSingleTurnFull = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 5;
+        const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 2;
 
         // Build rich context so BOTH the existing deployed Worker AND the updated Worker respond spontaneously
         const priorTurnsDesc = sceneMemory.turns.length > 0
@@ -1996,7 +2028,13 @@
         }
 
         // Reconcile AI Worker response with pedagogical rules WITHOUT wiping out the AI Worker's live character_reaction!
-        if (toneCheck.isRude) {
+        if (hasWrongBuilderChoice) {
+          result = {
+            decision: "refused_vague",
+            character_reaction: buildSpontaneousVagueReaction(step, studentText, curParts, sceneMemory),
+            coach_hint: buildSpontaneousVagueHint(step, studentText, curParts, sceneMemory)
+          };
+        } else if (toneCheck.isRude) {
           const aiRudeReaction = (result && result.decision === "refused_rude" && result.character_reaction)
             ? result.character_reaction
             : "";
@@ -2109,7 +2147,7 @@
             const nextStepLabel = scen.tries[currentTryIdx + 1].label;
             coachText.textContent = `⚠️ Safety Net Triggered! Tick "Haha, just testing you!" on your worksheet for ${step.label}, then tap Continue to move to the ${nextStepLabel}.`;
 
-            showTransitionPause(`➡️ Continue to ${nextStepLabel}`, true, 14, () => {
+            showTransitionPause("➡️ CONTINUE", true, 0, () => {
               currentTryIdx += 1;
               renderActiveTry();
               coachText.textContent = `Now on ${scen.tries[currentTryIdx].label}: Stand firm this time! Don't give in again!`;
@@ -2183,29 +2221,30 @@
           ? `✅ Okay, you completed both parts across your tries! Next time, put your Way to Cope, Reason, and Suggestion into one full sentence on your first try!`
           : `✅ Caring & firm refusal on ${step.label}! Your partner felt respected. Record your Way to Cope on Worksheet Part 2!`);
 
+        setStageArt(step.successImage || step.image);
+        sceneBadge.textContent = `${step.label} Cleared! 💖`;
+        sceneBadge.className = "stage-pill ok";
+
+        const okLine = result.character_reaction || ensureSceneBridgeInReaction(step, studentText, sceneMemory, "");
+        dialogueText.dataset.rawLine = okLine;
+        dialogueText.innerHTML = decorateDialogueHtml(okLine);
+        speakText(okLine, scen.voiceGender);
+
         if (currentTryIdx + 1 < scen.tries.length) {
-          setStageArt(step.successImage || step.image);
-          sceneBadge.textContent = `${step.label} Cleared! 💖`;
-          sceneBadge.className = "stage-pill ok";
-
-          const okLine = result.character_reaction || ensureSceneBridgeInReaction(step, studentText, sceneMemory, "");
-          dialogueText.dataset.rawLine = okLine;
-          dialogueText.innerHTML = decorateDialogueHtml(okLine);
-          speakText(okLine, scen.voiceGender);
-
-          const nextStepLabel = scen.tries[currentTryIdx + 1].label;
-          showTransitionPause(`➡️ Continue to ${nextStepLabel}`, false, 9, () => {
+          showTransitionPause("➡️ CONTINUE", false, 0, () => {
             currentTryIdx += 1;
             renderActiveTry();
           });
         } else {
-          if (mistakesCount === 0 && conflictsCount === 0) {
-            showEnding("golden", result);
-          } else if (mistakesCount === 0 && conflictsCount >= 1) {
-            showEnding("conflict_coldwar", result);
-          } else {
-            showEnding("close_call", result);
-          }
+          showTransitionPause("➡️ CONTINUE", false, 0, () => {
+            if (mistakesCount === 0 && conflictsCount === 0) {
+              showEnding("golden", result);
+            } else if (mistakesCount === 0 && conflictsCount >= 1) {
+              showEnding("conflict_coldwar", result);
+            } else {
+              showEnding("close_call", result);
+            }
+          });
         }
       }
 
