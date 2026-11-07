@@ -160,6 +160,18 @@
         font-size: 0.98rem;
         min-height: 2.2em;
       }
+      .student-reply-box {
+        padding: 10px 13px;
+        margin-top: 8px;
+        border-radius: 12px;
+      }
+      .student-reply-tag {
+        font-size: 0.76rem;
+        padding: 3px 10px;
+      }
+      .student-reply-line {
+        font-size: 0.94rem;
+      }
       .right-col {
         gap: 10px;
       }
@@ -284,6 +296,72 @@
       font-weight: 600;
       color: var(--text);
       min-height: 2.8em;
+    }
+    .student-reply-box {
+      background: #f8fafc;
+      border: 2px dashed var(--teal-border);
+      border-radius: var(--radius);
+      padding: 13px 18px;
+      margin-top: 10px;
+      box-shadow: var(--shadow);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .student-reply-box.has-input {
+      background: #f0fdf4;
+      border: 2px solid #86efac;
+    }
+    .student-reply-tag {
+      background: var(--teal);
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.82rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+    .student-reply-hint {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid #86efac;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .student-reply-line {
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: var(--ink);
+      min-height: 1.6em;
+      line-height: 1.45;
+      white-space: pre-line;
+    }
+    .student-reply-line.empty-state {
+      font-weight: 600;
+      font-style: italic;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+    .reply-line-winner {
+      display: block;
+      background: #dcfce7;
+      border: 1.5px solid #86efac;
+      border-left: 4px solid #16a34a;
+      color: #14532d;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-weight: 800;
+      margin: 4px 0;
+    }
+    .reply-line-normal {
+      display: block;
+      padding: 2px 0;
+    }
+    .reply-line-dim {
+      display: block;
+      color: #94a3b8;
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 2px 0;
     }
     .report-card {
       background: #fff;
@@ -618,6 +696,15 @@
           <button type="button" class="top-btn" id="replayLineBtn" style="padding:4px 10px; font-size:0.8rem;">🔊 Replay Line</button>
         </div>
         <div class="dialogue-line" id="dialogueText"></div>
+      </div>
+
+      <!-- Student Last Input Card (Seated Below Partner Dialogue Box for Worksheet Recording) -->
+      <div class="student-reply-box" id="studentReplyBox">
+        <div class="vn-speaker-row" style="margin-bottom:6px;">
+          <span class="student-reply-tag" id="studentReplyTag">💬 What You Said (1st try)</span>
+          <span class="student-reply-hint" id="studentReplyHint" hidden>📝 Write on Worksheet</span>
+        </div>
+        <div class="student-reply-line empty-state" id="studentReplyText">Nothing said for this try yet — speak or type your reply on the right.</div>
       </div>
     </div>
 
@@ -1017,6 +1104,11 @@
       let soundMuted = false;
       let framesExpanded = false;
 
+      // Per-try and per-scenario student input log so students can copy their exact words onto the worksheet
+      let currentTryInputs = [];
+      let currentTryCleared = false;
+      let allScenarioInputs = {};
+
       // Multi-turn memory within the active scene so partial answers accumulate naturally
       let sceneMemory = {
         turns: [],
@@ -1045,6 +1137,10 @@
       const safetyBadge = document.getElementById("safetyBadge");
       const speakerTag = document.getElementById("speakerTag");
       const dialogueText = document.getElementById("dialogueText");
+      const studentReplyBox = document.getElementById("studentReplyBox");
+      const studentReplyTag = document.getElementById("studentReplyTag");
+      const studentReplyHint = document.getElementById("studentReplyHint");
+      const studentReplyText = document.getElementById("studentReplyText");
       const reportCard = document.getElementById("reportCard");
       const finalGradeBadge = document.getElementById("finalGradeBadge");
       const finalEndingTitle = document.getElementById("finalEndingTitle");
@@ -1111,7 +1207,65 @@
         }
       }
 
+      function escapeReplyHtml(str) {
+        return String(str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function updateStudentReplyDisplay() {
+        const scen = SCENARIOS[currentScenarioKey];
+        const step = scen && scen.tries[currentTryIdx];
+        const stepLabel = step ? step.label : "This try";
+        if (isEnded) {
+          studentReplyTag.textContent = "💬 What You Said (All Tries)";
+          studentReplyHint.textContent = "📝 Write on Worksheet";
+          studentReplyHint.hidden = false;
+          const summaryHtml = (scen ? scen.tries : []).map((t, idx) => {
+            const arr = allScenarioInputs[idx] || [];
+            const winners = arr.filter(x => x.status === "winner");
+            const chosen = winners.length ? winners : arr;
+            const textJoined = chosen.length
+              ? chosen.map(x => `&quot;${escapeReplyHtml(x.text)}&quot;`).join(" + ")
+              : "(nothing said)";
+            return `<span class="reply-line-winner">✅ ${escapeReplyHtml(t.label)}: ${textJoined}</span>`;
+          }).join("");
+          studentReplyBox.classList.add("has-input");
+          studentReplyText.classList.remove("empty-state");
+          studentReplyText.innerHTML = summaryHtml;
+          return;
+        }
+        studentReplyTag.textContent = `💬 What You Said (${stepLabel})`;
+        studentReplyHint.textContent = "📝 Write on Worksheet";
+        studentReplyHint.hidden = !currentTryCleared;
+        if (!currentTryInputs.length) {
+          studentReplyBox.classList.remove("has-input");
+          studentReplyText.classList.add("empty-state");
+          studentReplyText.textContent = "Nothing said for this try yet — speak or type your reply on the right.";
+        } else {
+          studentReplyBox.classList.toggle("has-input", currentTryCleared);
+          studentReplyText.classList.remove("empty-state");
+          const multi = currentTryInputs.length > 1;
+          const linesHtml = currentTryInputs.map((item, idx) => {
+            const prefix = multi ? `Round ${idx + 1}: ` : "";
+            const body = `${prefix}&quot;${escapeReplyHtml(item.text)}&quot;`;
+            if (currentTryCleared) {
+              if (item.status === "winner") {
+                return `<span class="reply-line-winner">✅ ${body}</span>`;
+              }
+              return `<span class="reply-line-dim">${body}</span>`;
+            }
+            return `<span class="reply-line-normal">${body}</span>`;
+          }).join("");
+          studentReplyText.innerHTML = linesHtml;
+        }
+      }
+
       function resetSceneMemory() {
+        currentTryInputs = [];
+        currentTryCleared = false;
         sceneMemory = {
           turns: [],
           careText: "",
@@ -1122,6 +1276,7 @@
           hasReasonDetail: false,
           hasSuggestion: false
         };
+        updateStudentReplyDisplay();
       }
 
       function clearPendingTransition() {
@@ -1688,6 +1843,7 @@
         finalGradeBadge.className = `grade-circle grade-${grade}`;
         finalEndingTitle.textContent = endData.title;
         finalCoachComment.textContent = pointFormComment;
+        updateStudentReplyDisplay();
       }
 
       function analyzeTurnParts(step, studentText) {
@@ -1945,6 +2101,15 @@
       }
 
       async function evaluateTurn(studentText) {
+        const cleanStudentInput = String(studentText || "").trim();
+        let activeInputEntry = null;
+        if (cleanStudentInput) {
+          currentTryCleared = false;
+          activeInputEntry = { text: cleanStudentInput, status: "pending", isValidPart: false };
+          currentTryInputs.push(activeInputEntry);
+          allScenarioInputs[currentTryIdx] = currentTryInputs.slice();
+          updateStudentReplyDisplay();
+        }
         clearInputBoxCompletely();
         scrollToStageTop();
 
@@ -1964,6 +2129,9 @@
         const combinedHasWay = curParts.hasWayOrReason || sceneMemory.hasWayOrReason;
         const combinedHasSug = curParts.hasSuggestion || sceneMemory.hasSuggestion;
         const hasWrongBuilderChoice = Boolean(curParts.pickedWrongWay || curParts.pickedWrongSuggestion);
+        if (activeInputEntry) {
+          activeInputEntry.isValidPart = Boolean(!toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && (curParts.hasWayOrReason || curParts.hasSuggestion));
+        }
         const isSingleTurnFull = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 5;
         const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 2;
 
@@ -2200,6 +2368,9 @@
           speakText(react, scen.voiceGender);
 
           sceneMemory.turns.push({ studentText, partnerReply: react, decision: "refused_vague" });
+          if (activeInputEntry) {
+            activeInputEntry.status = activeInputEntry.isValidPart ? "partial_good" : "invalid";
+          }
           updateProgressiveHintsUI(step);
           coachText.textContent = hint.startsWith("💡") || hint.startsWith("💬") || hint.startsWith("⚠️") ? hint : `💡 Hint for ${step.label}: ${hint}`;
           return;
@@ -2220,6 +2391,18 @@
         coachText.textContent = result.coach_hint || (result.completedViaMultiTurn
           ? `✅ Okay, you completed both parts across your tries! Next time, put your Way to Cope, Reason, and Suggestion into one full sentence on your first try!`
           : `✅ Caring & firm refusal on ${step.label}! Your partner felt respected. Record your Way to Cope on Worksheet Part 2!`);
+
+        if (activeInputEntry) {
+          activeInputEntry.status = "winner";
+        }
+        if (result.completedViaMultiTurn) {
+          currentTryInputs.forEach(item => {
+            if (item.status === "partial_good") item.status = "winner";
+          });
+        }
+        allScenarioInputs[currentTryIdx] = currentTryInputs.slice();
+        currentTryCleared = true;
+        updateStudentReplyDisplay();
 
         setStageArt(step.successImage || step.image);
         sceneBadge.textContent = `${step.label} Cleared! 💖`;
@@ -2472,6 +2655,7 @@
       function restartScenario() {
         clearPendingTransition();
         clearInputBoxCompletely();
+        allScenarioInputs = {};
         currentTryIdx = 0;
         mistakesCount = 0;
         conflictsCount = 0;
