@@ -2128,10 +2128,14 @@
         const toneCheck = checkToneIsRudeOrTooStrict(studentText);
         const curParts = analyzeTurnParts(step, studentText);
 
-        const giveInPatterns = /\b(ok|okay|yes|sure|let's go up|lets go up|go to your flat|go to your room|lock the door|let's watch|lets watch|show me|kiss me|touch me|i want to|why not|alright let's do it)\b/i;
-        const refusalOrSuggestWords = /\b(no|not|don't|dont|do not|stop|never|cannot|can't|cant|refuse|shouldn't|should not|bad|wrong|unsafe|dangerous|avoid|stay away|respect|limit|limits|instead|let's|lets|go to|play|study|sit|walk|cycle|care|like|love|please|sorry|because|hungry|eat|library|cafe|café|lounge|basketball|bowling|cycling)\b/i;
-        const isConditionalJoke = /\b(kiss me|touch me|hold me)\s+(only|when|if|after|once|unless)\b/i.test(studentText.toLowerCase());
-        const isLocalGiveIn = !isConditionalJoke && giveInPatterns.test(studentText.toLowerCase()) && !refusalOrSuggestWords.test(studentText.toLowerCase());
+        const lowStudent = studentText.toLowerCase().trim();
+        const bareGiveInRx = /^(ok|okay|yes|yeah|yep|sure|alright|why not|let's do it|lets do it|i want to)[.!\s]*$/i;
+        const explicitGiveInRx = /\b(let's go up|lets go up|go to your flat|go to your room|lock the door|let's watch|lets watch|show me|kiss me|touch me|alright let's do it)\b/i;
+        const hesitationOrDiscomfortRx = /\b(shy|nervous|embarrassed|scared|afraid|uncomfortable|wait|later|not ready|too fast|too close|too young|under 16|awkward|weird|worry|worried|unsure|hesitate|umm|uhh|hmm)\b/i;
+        const refusalOrSuggestWords = /\b(no|not|don't|dont|do not|stop|never|cannot|can't|cant|refuse|shouldn't|should not|bad|wrong|unsafe|dangerous|avoid|stay away|respect|limit|limits|instead|let's|lets|go to|play|study|sit|walk|cycle|care|like|love|please|sorry|because|hungry|eat|library|cafe|café|lounge|basketball|bowling|cycling|shy|nervous|embarrassed|scared|afraid|uncomfortable|wait|later|not ready|too fast|too close|too young|awkward|weird|worry|worried|unsure)\b/i;
+        const isConditionalJoke = /\b(kiss me|touch me|hold me)\s+(only|when|if|after|once|unless)\b/i.test(lowStudent);
+        const isHesitationOnly = hesitationOrDiscomfortRx.test(lowStudent);
+        const isLocalGiveIn = !isConditionalJoke && !isHesitationOnly && (bareGiveInRx.test(lowStudent) || (explicitGiveInRx.test(lowStudent) && !refusalOrSuggestWords.test(lowStudent)));
 
         // Check how this turn combines with earlier turns in the same scene (Multi-Turn Memory)
         const hadPriorTurns = sceneMemory.turns.length > 0;
@@ -2223,6 +2227,16 @@
             character_reaction: aiRudeReaction || step.conflictReaction,
             coach_hint: aiRudeHint
           };
+        } else if (isHesitationOnly && (!curParts.hasWayOrReason || !curParts.hasSuggestion)) {
+          result = {
+            decision: "refused_vague",
+            character_reaction: (result && result.decision === "refused_vague" && result.character_reaction)
+              ? result.character_reaction
+              : buildSpontaneousVagueReaction(step, studentText, curParts, sceneMemory),
+            coach_hint: (result && result.decision === "refused_vague" && result.coach_hint)
+              ? result.coach_hint
+              : `💡 Being shy or uncomfortable is completely normal! Now state your clear limit and suggest a safe activity using: [ care ], but we should [ way to cope ] because [ reason ]. Let's [ suggestion ] instead!`
+          };
         } else if (isLocalGiveIn) {
           result = result || { decision: "gave_in" };
           result.decision = "gave_in";
@@ -2309,7 +2323,7 @@
           mistakesCount += 1;
           updateSafetyBadge();
 
-          if (mistakesCount === 1 && currentTryIdx < scen.tries.length - 1) {
+          if (mistakesCount === 1) {
             playSfx("warn");
             setStageArt(step.safetyNetImage || scen.safetyNetImage);
             sceneBadge.textContent = `${step.label} · ⚠️ Just Testing You!`;
@@ -2321,14 +2335,20 @@
             dialogueText.textContent = safetyLine;
             speakText(safetyLine, scen.voiceGender);
 
-            const nextStepLabel = scen.tries[currentTryIdx + 1].label;
-            coachText.textContent = `⚠️ Safety Net Triggered! Tick "Haha, just testing you!" on your worksheet for ${step.label}, then tap Continue to move to the ${nextStepLabel}.`;
-
-            showTransitionPause("➡️ CONTINUE", true, 0, () => {
-              currentTryIdx += 1;
-              renderActiveTry();
-              coachText.textContent = `Now on ${scen.tries[currentTryIdx].label}: Stand firm this time! Don't give in again!`;
-            });
+            if (currentTryIdx < scen.tries.length - 1) {
+              const nextStepLabel = scen.tries[currentTryIdx + 1].label;
+              coachText.textContent = `⚠️ Safety Net Triggered ("Haha, just testing you!")! Tap 🔄 RETRY to practise refusing ${step.label}, or tap ➡️ CONTINUE to move to the ${nextStepLabel}.`;
+              showTransitionPause("➡️ CONTINUE", true, 0, () => {
+                currentTryIdx += 1;
+                renderActiveTry();
+                coachText.textContent = `Now on ${scen.tries[currentTryIdx].label}: Stand firm this time! Don't give in again!`;
+              });
+            } else {
+              coachText.textContent = `⚠️ Safety Net Triggered ("Haha, just testing you!")! Tap 🔄 RETRY to practise refusing ${step.label} properly, or tap ➡️ CONTINUE to see your Close Call report card.`;
+              showTransitionPause("➡️ CONTINUE", true, 0, () => {
+                showEnding("close_call", result);
+              });
+            }
             return;
           } else {
             showEnding("bad_regret", result);
