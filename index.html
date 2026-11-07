@@ -1846,9 +1846,23 @@
         dialogueText.textContent = endData.line;
         speakText(endData.line, scen.voiceGender);
 
+        let displayEndingTitle = endData.title;
+        if (endingType === "golden") {
+          const baseSub = String(endData.title || "").replace(/^.*?Ending:\s*/i, "");
+          if (grade === "S") {
+            displayEndingTitle = `🏆 Golden Ending: ${baseSub}`;
+          } else if (grade === "A") {
+            displayEndingTitle = `🌟 Great Ending: ${baseSub}`;
+          } else if (grade === "B") {
+            displayEndingTitle = `👍 Good Ending: ${baseSub}`;
+          } else {
+            displayEndingTitle = `✅ Safe Ending: ${baseSub}`;
+          }
+        }
+
         finalGradeBadge.textContent = grade;
         finalGradeBadge.className = `grade-circle grade-${grade}`;
-        finalEndingTitle.textContent = endData.title;
+        finalEndingTitle.textContent = displayEndingTitle;
         finalCoachComment.textContent = pointFormComment;
         updateStudentReplyDisplay();
       }
