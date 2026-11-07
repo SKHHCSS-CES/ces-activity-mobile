@@ -1221,18 +1221,25 @@
         const stepLabel = step ? step.label : "This try";
         if (isEnded) {
           studentReplyTag.textContent = "💬 What You Said (All Tries)";
+          const anyWinner = (scen ? scen.tries : []).some((_, idx) =>
+            (allScenarioInputs[idx] || []).some(x => x.status === "winner")
+          );
           studentReplyHint.textContent = "📝 Write on Worksheet";
-          studentReplyHint.hidden = false;
+          studentReplyHint.hidden = !anyWinner;
           const summaryHtml = (scen ? scen.tries : []).map((t, idx) => {
             const arr = allScenarioInputs[idx] || [];
             const winners = arr.filter(x => x.status === "winner");
-            const chosen = winners.length ? winners : arr;
-            const textJoined = chosen.length
-              ? chosen.map(x => `&quot;${escapeReplyHtml(x.text)}&quot;`).join(" + ")
-              : "(nothing said)";
-            return `<span class="reply-line-winner">✅ ${escapeReplyHtml(t.label)}: ${textJoined}</span>`;
+            if (winners.length > 0) {
+              const textJoined = winners.map(x => `&quot;${escapeReplyHtml(x.text)}&quot;`).join(" + ");
+              return `<span class="reply-line-winner">✅ ${escapeReplyHtml(t.label)}: ${textJoined}</span>`;
+            }
+            if (arr.length > 0) {
+              const textFailed = arr.map(x => `&quot;${escapeReplyHtml(x.text)}&quot;`).join(" / ");
+              return `<span class="reply-line-dim">❌ ${escapeReplyHtml(t.label)} (Not passed): ${textFailed}</span>`;
+            }
+            return `<span class="reply-line-dim">${escapeReplyHtml(t.label)}: (nothing said)</span>`;
           }).join("");
-          studentReplyBox.classList.add("has-input");
+          studentReplyBox.classList.toggle("has-input", anyWinner);
           studentReplyText.classList.remove("empty-state");
           studentReplyText.innerHTML = summaryHtml;
           return;
@@ -1573,6 +1580,7 @@
       }
 
       function renderActiveTry(customLine, customImage) {
+        isEnded = false;
         clearPendingTransition();
         clearInputBoxCompletely();
         tryVagueCount = 0;
@@ -1582,7 +1590,6 @@
 
         const scen = SCENARIOS[currentScenarioKey];
         const step = scen.tries[currentTryIdx];
-        isEnded = false;
         reportCard.hidden = true;
         missionHud.hidden = false;
         inputCard.hidden = false;
@@ -1875,9 +1882,10 @@
           extractedSuggestion = sugMatch[0].trim();
         }
 
+        const conditionalTouchRx = /\b(kiss me|touch me|hold me|hug me)\s+(only|when|if|after|once|unless)\b|\b(let you|allow you to)\s+(kiss|touch|hold)\b/i;
         const wrongWayRx = /\b(keep our door locked|nobody will know we are inside|watch the 18\+ video together|everyone at school talks about it|give in to close touch|saying no might make you angry)\b/i;
         const wrongSugRx = /\b(stay inside this quiet room|ten more minutes|10 more minutes|only watch the 18\+ clip|for one minute and delete it|move to a darker corner|nobody can see us)\b/i;
-        const pickedWrongWay = wrongWayRx.test(t);
+        const pickedWrongWay = wrongWayRx.test(t) || conditionalTouchRx.test(t);
         const pickedWrongSuggestion = wrongSugRx.test(t);
 
         let hasWayOrReason = false;
@@ -2122,7 +2130,8 @@
 
         const giveInPatterns = /\b(ok|okay|yes|sure|let's go up|lets go up|go to your flat|go to your room|lock the door|let's watch|lets watch|show me|kiss me|touch me|i want to|why not|alright let's do it)\b/i;
         const refusalOrSuggestWords = /\b(no|not|don't|dont|do not|stop|never|cannot|can't|cant|refuse|shouldn't|should not|bad|wrong|unsafe|dangerous|avoid|stay away|respect|limit|limits|instead|let's|lets|go to|play|study|sit|walk|cycle|care|like|love|please|sorry|because|hungry|eat|library|cafe|café|lounge|basketball|bowling|cycling)\b/i;
-        const isLocalGiveIn = giveInPatterns.test(studentText.toLowerCase()) && !refusalOrSuggestWords.test(studentText.toLowerCase());
+        const isConditionalJoke = /\b(kiss me|touch me|hold me)\s+(only|when|if|after|once|unless)\b/i.test(studentText.toLowerCase());
+        const isLocalGiveIn = !isConditionalJoke && giveInPatterns.test(studentText.toLowerCase()) && !refusalOrSuggestWords.test(studentText.toLowerCase());
 
         // Check how this turn combines with earlier turns in the same scene (Multi-Turn Memory)
         const hadPriorTurns = sceneMemory.turns.length > 0;
@@ -2653,6 +2662,8 @@
       });
 
       function restartScenario() {
+        isEnded = false;
+        currentTryCleared = false;
         clearPendingTransition();
         clearInputBoxCompletely();
         allScenarioInputs = {};
