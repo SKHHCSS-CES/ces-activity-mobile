@@ -721,8 +721,8 @@
           </div>
         </div>
         <div style="background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
-          <div style="font-size:0.78rem; font-weight:800; color:var(--teal); text-transform:uppercase; margin-bottom:6px;">💬 AI Values Coach Comment (Copy to Worksheet Part 3):</div>
-          <div id="finalCoachComment" style="font-weight:700; color:var(--text); margin:0; line-height:1.5; white-space:pre-line;"></div>
+          <div style="font-size:0.78rem; font-weight:800; color:var(--teal); text-transform:uppercase; margin-bottom:6px;">💬 AI Values Coach Comment (Write on Worksheet):</div>
+          <div id="finalCoachComment" style="font-weight:700; color:var(--text); margin:0; line-height:1.5;"></div>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="top-btn" id="listenReportBtn">🔊 Listen to Report</button>
@@ -1690,16 +1690,77 @@
       function formatPointFormReport(summaryLine, improvementLine) {
         const cleanSum = String(summaryLine || "").replace(/^[-•*]\s*(summary\s*:\s*)?/i, "").trim();
         const cleanImp = String(improvementLine || "").replace(/^[-•*]\s*(improvement\s*:\s*)?/i, "").trim();
-        return `- summary:\n      ${cleanSum}\n- improvement:\n      ${cleanImp}`;
+        return {
+          speech: `Summary: ${cleanSum}. Improvement: ${cleanImp}`,
+          html: `
+            <div style="margin-bottom:8px; color:var(--text); font-weight:700;">
+              <div style="font-size:0.84rem; font-weight:800; color:var(--muted); letter-spacing:0.02em;">- SUMMARY:</div>
+              <div style="padding-left:12px;">${escapeReplyHtml(cleanSum)}</div>
+            </div>
+            <div class="reply-line-winner" style="padding:8px 12px; margin-top:6px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:2px; flex-wrap:wrap;">
+                <span style="font-size:0.84rem; font-weight:800; color:#15803d; letter-spacing:0.02em;">- IMPROVEMENT:</span>
+                <span style="font-size:0.75rem; font-weight:800; color:#15803d; background:#bbf7d0; padding:2px 8px; border-radius:999px;">📝 Write on Worksheet</span>
+              </div>
+              <div style="padding-left:12px; color:#14532d; font-weight:800;">${escapeReplyHtml(cleanImp)}</div>
+            </div>
+          `.trim()
+        };
+      }
+
+      function buildDiagnosticImprovement(endingType) {
+        if (endingType === "bad_regret") {
+          return conflictsCount > 0
+            ? "Say no kindly and explain why it is unsafe."
+            : "Refuse risky invitations firmly and explain your reason.";
+        }
+        if (endingType === "close_call") {
+          return missingReasonCount > 0
+            ? "Refuse on the first try with a clear reason."
+            : "Refuse firmly on the first try without hesitating.";
+        }
+        if (endingType === "conflict_coldwar") {
+          return missingSuggestionCount > 0
+            ? "Speak gently with care and suggest a safe activity."
+            : "Speak gently with care instead of scolding harshly.";
+        }
+        // Positive completion (Grades S, A, B, C): diagnose what was missing or needed help
+        if (splitTurnScenesCount > 0 && playSafeScenesCount > 0) {
+          return "Say all 4 parts together in your own words.";
+        }
+        if (splitTurnScenesCount > 0) {
+          return "Combine all 4 parts into one full sentence.";
+        }
+        if (missingCareCount > 0 && missingReasonCount > 0) {
+          return "Add caring words and explain why it is risky.";
+        }
+        if (missingCareCount > 0) {
+          return "Start with caring words like 'I care about you'.";
+        }
+        if (missingReasonCount > 0) {
+          return "Explain clearly why the risky situation is unsafe.";
+        }
+        if (missingSuggestionCount > 0) {
+          return "Suggest a safe place or sport right away.";
+        }
+        if (playSafeScenesCount > 0) {
+          return "Practise saying the full refusal in your own words.";
+        }
+        if (hintsUsedCount > 0) {
+          return "State your reason and suggestion on the first try.";
+        }
+        return "Try using new caring phrases and different activity ideas.";
       }
 
       function buildPointFormReportForEnding(endingType, grade, workerResult) {
-        // Check if AI Worker provided valid summary + improvement without mentioning UI button names
+        const diagnosticImp = buildDiagnosticImprovement(endingType);
+
+        // Check if AI Worker provided a concise summary & genuine improvement (not just repeating the 4 Ways to Cope)
         if (workerResult && typeof workerResult === "object") {
           let wSum = String(workerResult.report_summary || "").trim();
           let wImp = String(workerResult.report_improvement || "").trim();
           const rawComment = String(workerResult.final_report_comment || "").trim();
-          if ((!wSum || !wImp) && rawComment.includes("summary") && rawComment.includes("improvement")) {
+          if ((!wSum || !wImp) && rawComment.toLowerCase().includes("summary") && rawComment.toLowerCase().includes("improvement")) {
             const mSum = rawComment.match(/summary\s*:\s*([^\n]+(?:\n(?!\s*[-•*]?\s*improvement)[^\n]+)*)/i);
             const mImp = rawComment.match(/improvement\s*:\s*([^\n]+(?:\n.+)*)/i);
             if (mSum && mImp) {
@@ -1707,85 +1768,58 @@
               wImp = mImp[1].trim();
             }
           }
+          const sumWords = wSum.split(/\s+/).filter(Boolean).length;
+          const impWords = wImp.split(/\s+/).filter(Boolean).length;
           const combinedCheck = (wSum + " " + wImp).toLowerCase();
           const mentionsUiMechanics = /play-safe|playsafe|builder|button|click|tap/i.test(combinedCheck);
-          if (wSum && wImp && !mentionsUiMechanics && endingType === "golden") {
-            if (splitTurnScenesCount > 0 && !/one full sentence|single sentence|first try|together/i.test(wImp)) {
-              wImp = "Practise combining your care, way to cope, reason, and suggestion into one full sentence on your first try.";
-            }
-            return formatPointFormReport(wSum, wImp);
+          const repeatsWaysOnly = /ways to cope|avoid quiet places|stay away from pornography|set limits of intimacy/i.test(wImp);
+          if (wSum && wImp && sumWords <= 9 && impWords <= 9 && !mentionsUiMechanics && !repeatsWaysOnly && endingType === "golden") {
+            return formatPointFormReport(wSum, splitTurnScenesCount > 0 ? diagnosticImp : wImp);
           }
         }
 
         if (endingType === "golden") {
           if (grade === "S") {
-            const impS = (missingCareCount > 0 || missingReasonCount > 0)
-              ? "Try starting every refusal with a warm caring phrase and a clear reason so your partner always feels respected."
-              : "Keep expressing care, clear reasons, and healthy suggestions when setting boundaries in real life.";
             return formatPointFormReport(
-              "You refused all risky situations politely on the first try using full sentences and the 4 Ways to Cope.",
-              impS
+              "Refused all risky situations politely and clearly.",
+              diagnosticImp
             );
           }
           if (grade === "A") {
-            if (splitTurnScenesCount > 0) {
-              return formatPointFormReport(
-                "You used the right Ways to Cope and suggested safe activities across your replies.",
-                "Practise combining your care, way to cope, reason, and suggestion into one full sentence on your first try."
-              );
-            }
-            if (missingSuggestionCount > 0) {
-              return formatPointFormReport(
-                "You refused the risky situations politely and showed self-discipline and respect.",
-                "Include a safe public place or healthy activity right away in your first refusal sentence."
-              );
-            }
-            return formatPointFormReport(
-              "You applied the 4 Ways to Cope well and kept a caring, respectful relationship.",
-              "State both why the situation is risky and what healthy activity to do instead on your first try."
-            );
+            const sumA = splitTurnScenesCount > 0
+              ? "Used the 4 Ways to Cope well."
+              : "Stayed safe and respectful in all tries.";
+            return formatPointFormReport(sumA, diagnosticImp);
           }
           if (grade === "B") {
             return formatPointFormReport(
-              "You stayed safe by avoiding quiet places, refusing 18+ media, and setting clear limits.",
-              "Practise speaking the complete refusal sentence (care + way to cope + reason + suggestion) in your own words on the first try."
+              "Stayed safe and set clear limits.",
+              diagnosticImp
             );
           }
           return formatPointFormReport(
-            "You recognised the risky situations and chose safe public places and healthy sports.",
-            "Review the 4 Ways to Cope and practise saying a full refusal sentence with a clear reason without needing hints."
+            "Chose safe places and healthy activities.",
+            diagnosticImp
           );
         }
 
         if (endingType === "conflict_coldwar") {
-          if (grade === "B") {
-            return formatPointFormReport(
-              "You protected yourself and set firm boundaries against risky situations.",
-              "Start your refusal with caring words (like 'I care about you') and a friendly suggestion so you do not hurt your partner."
-            );
-          }
-          return formatPointFormReport(
-            "You refused the risky situations safely, but harsh or scolding words hurt your partner's feelings.",
-            "Replace harsh commands with a caring tone, explain your reason calmly, and suggest a healthy activity together."
-          );
+          const sumConflict = grade === "B"
+            ? "Set firm limits against risky situations."
+            : "Refused safely, but harsh words hurt your partner.";
+          return formatPointFormReport(sumConflict, diagnosticImp);
         }
 
         if (endingType === "close_call") {
-          if (grade === "B") {
-            return formatPointFormReport(
-              "You recovered after the first warning and held firm boundaries on the remaining tries.",
-              "Practise self-discipline to refuse firmly on the very first try whenever a partner suggests a risky situation."
-            );
-          }
-          return formatPointFormReport(
-            "You gave in once before refusing the remaining risky situations.",
-            "Spot risky situations early and say no right away using a clear Way to Cope, reason, and public activity."
-          );
+          const sumClose = grade === "B"
+            ? "Recovered well after the first warning."
+            : "Gave in once before refusing safely.";
+          return formatPointFormReport(sumClose, diagnosticImp);
         }
 
         return formatPointFormReport(
-          "Giving in to sexual impulses led to deep regret, family blame, and risks of unplanned pregnancy and STDs.",
-          "Always avoid quiet places alone, stay away from pornography, set firm limits with care, and join healthy activities."
+          "Giving in led to regret and health risks.",
+          diagnosticImp
         );
       }
 
@@ -1863,7 +1897,13 @@
         finalGradeBadge.textContent = grade;
         finalGradeBadge.className = `grade-circle grade-${grade}`;
         finalEndingTitle.textContent = displayEndingTitle;
-        finalCoachComment.textContent = pointFormComment;
+        if (pointFormComment && typeof pointFormComment === "object") {
+          finalCoachComment.innerHTML = pointFormComment.html;
+          finalCoachComment.dataset.speechText = pointFormComment.speech;
+        } else {
+          finalCoachComment.textContent = String(pointFormComment || "");
+          finalCoachComment.dataset.speechText = String(pointFormComment || "");
+        }
         updateStudentReplyDisplay();
       }
 
@@ -1877,46 +1917,48 @@
         const careRx = /\b(i care|care about you|i like you|like being with you|i love you|love you|you are important|you're important|my dear|sweetie|honey|sorry|i'm sorry|i am sorry|please understand|thank you|thanks|appreciate)\b/i;
         const hasCare = careRx.test(t);
 
-        const reasonCueRx = /\b(because|since|as|unsafe|dangerous|risky|wrong idea|wrong ideas|twist|twists|fake idea|fake ideas|harmful|respect|limits|boundaries|too young|under 16|illegal|law|parents|mum|mom|dad|family|regret|pregnant|pregnancy|std|stds|health|future|not ready|uncomfortable|impulse|impulses|fantasy|self-discipline|energy)\b/i;
+        const reasonCueRx = /\b(because|since|as|unsafe|not safe|dangerous|risky|wrong|bad|harmful|unhealthy|twist|twists|fake|disrespect|respect|limits|boundaries|too young|under 16|below 16|illegal|law|parents|mum|mom|dad|family|regret|pregnant|pregnancy|std|stds|health|future|not ready|uncomfortable|scared|afraid|shy|nervous|impulse|impulses|fantasy|self-discipline|energy|tempting|temptation|alone is|not good|shouldn't|should not|must not|cannot|can't)\b/i;
         const hasReasonDetail = reasonCueRx.test(t);
 
-        const quietAvoidRx = /\b(avoid|not|don't|dont|do not|no|never|unsafe|dangerous|leave|shouldn't|should not|can't|cannot|bad|wrong|risky|scared|afraid|uncomfortable|mum|mom|dad|parents)\b.*\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|house|home|locked|lock|door|alone|dark|stay here|go up|come up|inside)\b|\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|locked|lock|door|alone|dark)\b.*\b(unsafe|dangerous|bad|wrong|risky|no|not|avoid|shouldn't|should not|don't|dont)\b|\b(avoid quiet|not go up|don't go up|dont go up|don't lock|dont lock|keep the door open|open the door|not stay alone|don't stay alone|mum will be angry|parents will be angry|parents are not home)\b/i;
-        const quietPublicRx = /\b(public|cafe|café|coffee|library|lounge|downstairs|canteen|restaurant|mcdonald|mcdonald's|kfc|starbucks|mall|shopping|park|bright|people around|other people|food court|tea|bubble tea|eat|study room|clubhouse|outside|lobby|cinema|walk|sport|sports|basketball|badminton|bowling|cycling|football|volleyball|tennis|exercise)\b/i;
+        // Universal A1/A2 refusal & reason phrases valid across all risky situations (e.g. "it is wrong", "unsafe", "we are too young", "bad for us")
+        const generalRefusalOrReasonRx = /\b(it is wrong|it's wrong|that is wrong|that's wrong|this is wrong|is wrong|it is bad|it's bad|that is bad|this is bad|bad for us|bad for our|not good|not good for us|unsafe|not safe|dangerous|too dangerous|risky|too risky|harmful|unhealthy|too young|under 16|below 16|illegal|against the law|break the law|not ready|we are students|still students|parents will|mum will|mom will|dad will|family will|hurt our|hurt us|regret|respect each other|respect limits|respect my limits|respect our limits|set limits|limits of intimacy|control ourselves|control our desires|self-discipline|true love|wrong ideas|wrong idea|give wrong ideas|gives wrong ideas|bad ideas|fake ideas|twist love|twists love|we shouldn't|we should not|we can't|we cannot|we must not|don't do this|do not do this|stop doing this)\b/i;
 
-        const pornRefuseRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|bad|wrong|twist|twists|harmful|disrespect|unhealthy)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media)\b.*\b(off|away|close|wrong|bad|twist|twists|harmful|stop|no|not|don't|dont)\b|\b(stay away from pornography|turn it off|close it|put your phone away|close the tablet|wrong ideas|bad for our mind)\b/i;
-        const pornReasonOrAltRx = /\b(stay away from pornography|wrong|bad|twist|twists|harmful|fake|idea|ideas|value|values|respect|mind|because|instead|let's|lets|board game|card game|game|project|homework|study|basketball|sport|sports|chat|talk|eat|drink|music|walk)\b/i;
+        // 1. Quiet Place specific refusal
+        const quietAvoidRx = /\b(avoid|not|don't|dont|do not|no|never|unsafe|not safe|dangerous|leave|go out|shouldn't|should not|can't|cannot|bad|wrong|risky|scared|afraid|shy|nervous|uncomfortable|mum|mom|dad|parents)\b.*\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|house|locked|lock|door|alone|dark|stay here|go up|come up|inside|it|that|this)\b|\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|locked|lock|door|alone|dark|it|that|this|staying here|going up)\b.*\b(unsafe|not safe|dangerous|bad|wrong|risky|harmful|no|not|avoid|shouldn't|should not|don't|dont|can't|cannot)\b|\b(avoid quiet|not go up|don't go up|dont go up|don't lock|dont lock|keep the door open|open the door|not stay alone|don't stay alone|alone is unsafe|not safe alone|too quiet|nobody is home|nobody at home|parents are not home)\b/i;
 
-        const touchLimitRx = /\b(limit|limits|intimacy|intimate|boundary|boundaries|respect|uncomfortable|not ready|cross the line|too close|too fast|too young|under 16|law|healthy activit|self-discipline|control)\b|\b(no|not|don't|dont|do not|stop|never|shouldn't|should not|can't|cannot)\b.*\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|close|closely|prove|force|pressur|corner|line)\b|\b(love is not about touching|don't touch|dont touch|stop touching|please stop|keep our distance)\b/i;
-        const touchSportRx = /\b(healthy|activity|activities|sport|sports|basketball|bowling|badminton|football|soccer|volleyball|tennis|table tennis|swim|swimming|cycling|cycle|bike|bicycle|run|running|jog|jogging|walk|walking|exercise|volunteer|harbourfront|fresh air|gym|workout|play|cafe|café|library|game|board game|eat|ice cream)\b/i;
+        // 2. Pornography (18+ video / website) specific refusal
+        const pornRefuseRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|bad|wrong|twist|twists|harmful|disrespect|unhealthy|not good|shouldn't|should not|can't|cannot)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this|watch|watching|look|looking)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this|watching|looking)\b.*\b(off|away|close|wrong|bad|twist|twists|harmful|unhealthy|not good|stop|no|not|don't|dont|shouldn't|should not|illegal)\b|\b(stay away from pornography|turn it off|close it|put your phone away|close the tablet)\b/i;
 
-        // Detect specific suggestion phrase if present
+        // 3. Close Physical Touch specific refusal
+        const touchLimitRx = /\b(limit|limits|intimacy|intimate|boundary|boundaries|respect|uncomfortable|not ready|shy|nervous|scared|afraid|cross the line|too close|too fast|too young|under 16|illegal|law|self-discipline|control ourselves|control desires|true love)\b|\b(no|not|don't|dont|do not|stop|never|shouldn't|should not|can't|cannot|wait|bad|wrong|unsafe|risky)\b.*\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|close|closely|prove|force|pressur|corner|line|it|that|this|now|here)\b|\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|it|that|this)\b.*\b(wrong|bad|unsafe|risky|too close|too fast|not ready|uncomfortable|illegal|no|stop|don't|dont|shouldn't|should not)\b|\b(love is not about touching|don't touch|dont touch|stop touching|please stop|keep our distance)\b/i;
+
+        // Safe public places & healthy activities / study / date alternatives
+        const safePlaceOrActivityRx = /\b(public|cafe|café|coffee|library|lounge|downstairs|canteen|restaurant|mcdonald|mcdonald's|kfc|starbucks|mall|shopping|park|bright|people around|other people|food court|tea|bubble tea|study room|clubhouse|outside|lobby|cinema|healthy activit|sport|sports|basketball|badminton|bowling|cycling|cycle|bike|bicycle|football|soccer|volleyball|tennis|table tennis|ping pong|swim|swimming|run|running|jog|jogging|walk|walking|hike|hiking|exercise|workout|gym|volunteer|harbourfront|fresh air|board game|card game|game|games|chess|project|homework|study|studying|revision|read|reading|chat|chatting|talk|talking|eat|eating|lunch|dinner|snack|ice cream|drink|music|sing|karaoke|draw|paint|cook|bake|go out)\b/i;
+
         let extractedSuggestion = "";
-        const sugMatch = raw.match(/\b(?:let's|lets|how about we|why don't we|we can|we could|go to|play|do|eat at|sit in|sit at|study at|study in|head to|rent)\s+([^.?!]+)/i);
+        const sugMatch = raw.match(/\b(?:let's|lets|how about we|why don't we|we can|we could|go to|go|play|do|finish|work on|eat at|eat|sit in|sit at|study at|study in|study|head to|rent)\s+([^.?!]+)/i);
         if (sugMatch && sugMatch[0]) {
           extractedSuggestion = sugMatch[0].trim();
         }
 
-        const conditionalTouchRx = /\b(kiss me|touch me|hold me|hug me)\s+(only|when|if|after|once|unless)\b|\b(let you|allow you to)\s+(kiss|touch|hold)\b/i;
         const wrongWayRx = /\b(keep our door locked|nobody will know we are inside|watch the 18\+ video together|everyone at school talks about it|give in to close touch|saying no might make you angry)\b/i;
         const wrongSugRx = /\b(stay inside this quiet room|ten more minutes|10 more minutes|only watch the 18\+ clip|for one minute and delete it|move to a darker corner|nobody can see us)\b/i;
-        const pickedWrongWay = wrongWayRx.test(t) || conditionalTouchRx.test(t);
-        const pickedWrongSuggestion = wrongSugRx.test(t);
+        const conditionalGiveInRx = /\b(kiss me|touch me|hold me|go up|watch it)\s+(only|when|if|after|once|unless)\b/i;
+        const pickedWrongWay = wrongWayRx.test(t) || conditionalGiveInRx.test(t);
+        const pickedWrongSuggestion = wrongSugRx.test(t) || conditionalGiveInRx.test(t);
 
         let hasWayOrReason = false;
-        let hasSuggestion = false;
+        let hasSuggestion = !pickedWrongSuggestion && safePlaceOrActivityRx.test(t);
         let usedOtherSceneWay = false;
 
         if (trig.includes("quiet place")) {
-          hasWayOrReason = !pickedWrongWay && (quietAvoidRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|shouldn't|should not|avoid|never|can't|cannot|unsafe|dangerous|risky)\b/i.test(t)));
-          hasSuggestion = !pickedWrongSuggestion && quietPublicRx.test(t);
+          hasWayOrReason = !pickedWrongWay && (quietAvoidRx.test(t) || generalRefusalOrReasonRx.test(t));
           usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (pornRefuseRx.test(t) || touchLimitRx.test(t));
         } else if (trig.includes("pornography")) {
-          hasWayOrReason = !pickedWrongWay && pornRefuseRx.test(t);
-          hasSuggestion = !pickedWrongSuggestion && pornReasonOrAltRx.test(t);
-          usedOtherSceneWay = (!hasWayOrReason && !pickedWrongWay) && (quietAvoidRx.test(t) || touchLimitRx.test(t));
+          hasWayOrReason = !pickedWrongWay && (pornRefuseRx.test(t) || generalRefusalOrReasonRx.test(t));
+          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietAvoidRx.test(t) || touchLimitRx.test(t));
         } else {
-          hasWayOrReason = !pickedWrongWay && (touchLimitRx.test(t) || (hasReasonDetail && /\b(no|not|don't|dont|stop|shouldn't|should not|wait|respect)\b/i.test(t)));
-          hasSuggestion = !pickedWrongSuggestion && touchSportRx.test(t);
+          hasWayOrReason = !pickedWrongWay && (touchLimitRx.test(t) || generalRefusalOrReasonRx.test(t));
           usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietAvoidRx.test(t) || pornRefuseRx.test(t));
         }
 
@@ -2176,7 +2218,7 @@
 
         const enrichedCurrentLine = `${dialogueText.dataset.rawLine || step.line} [Earlier turns in this scene: ${priorTurnsDesc}. Multi-turn state before this reply: ${priorPartsDesc}.]`;
         const enrichedTargetCopingWay = `${step.copingWay} [LIVE SPONTANEITY RULES: 1) React directly to the student's exact words ("${studentText}")—mention their specific place/sport/excuse/feeling! 2) To get "refused_well", the student must cover BOTH the Way to Cope/Reason AND a safe Suggestion (either in this single sentence OR combined across their earlier turn + this turn). If they only gave one part so far, return "refused_vague", have ${scen.speaker} react naturally to their exact words and ask for the missing part, and have coach_hint praise what they gave and ask for the missing part. 3) If they completed the missing part across two turns, return "refused_well" and in coach_hint say okay and advise them to combine all parts into one full sentence on the 1st try next time! 4) When returning "refused_well", if their suggestion differs from the next scene setting (${step.nextSceneSetting}), have ${scen.speaker} validate their idea ("That's a good idea!") and ask "How about we ${step.nextSceneBridge} instead?" to match the next picture!]`;
-        const enrichedTargetValue = `${step.edbValue} [For final_report_comment, use point form with NO mention of Play-Safe Builder: "- summary: <1 concise sentence>\n- improvement: <1 concrete suggestion>"]`;
+        const enrichedTargetValue = `${step.edbValue} [For final_report_comment, use ultra-short A2 point form (MAX 6 to 8 words per line, giving a specific communication improvement tip rather than repeating the 4 ways to cope): "- SUMMARY: <6-8 words>\n- IMPROVEMENT: <6-8 words>"]`;
 
         let result = null;
 
@@ -2441,18 +2483,11 @@
         if (activeInputEntry) {
           activeInputEntry.status = "winner";
         }
-        const finalHasCare = Boolean(curParts.hasCare);
-        const finalHasWay = Boolean(curParts.hasWayOrReason);
-        const finalHasSug = Boolean(curParts.hasSuggestion);
-        if (result.completedViaMultiTurn || !finalHasWay || !finalHasSug || !finalHasCare) {
+        const finalIsCompleteAllFour = Boolean(curParts.hasCare && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 6);
+        if (result.completedViaMultiTurn || !finalIsCompleteAllFour) {
           currentTryInputs.forEach(item => {
-            if (item !== activeInputEntry && item.status === "partial_good") {
-              const suppliesMissingWay = !finalHasWay && item.hasWayOrReason;
-              const suppliesMissingSug = !finalHasSug && item.hasSuggestion;
-              const suppliesMissingCare = !finalHasCare && item.hasCare;
-              if (suppliesMissingWay || suppliesMissingSug || suppliesMissingCare) {
-                item.status = "winner";
-              }
+            if (item !== activeInputEntry && (item.status === "partial_good" || item.isValidPart)) {
+              item.status = "winner";
             }
           });
         }
@@ -2755,7 +2790,7 @@
       });
 
       document.getElementById("listenReportBtn").addEventListener("click", () => {
-        speakText(finalEndingTitle.textContent + ". " + finalCoachComment.textContent, "female");
+        speakText(finalEndingTitle.textContent + ". " + (finalCoachComment.dataset.speechText || finalCoachComment.textContent), "female");
       });
 
       document.getElementById("teacherToggleBtn").addEventListener("click", () => {
