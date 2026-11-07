@@ -2157,10 +2157,13 @@
         const combinedHasSug = curParts.hasSuggestion || sceneMemory.hasSuggestion;
         const hasWrongBuilderChoice = Boolean(curParts.pickedWrongWay || curParts.pickedWrongSuggestion);
         if (activeInputEntry) {
-          activeInputEntry.isValidPart = Boolean(!toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && (curParts.hasWayOrReason || curParts.hasSuggestion));
+          activeInputEntry.hasCare = Boolean(curParts.hasCare);
+          activeInputEntry.hasWayOrReason = Boolean(curParts.hasWayOrReason);
+          activeInputEntry.hasSuggestion = Boolean(curParts.hasSuggestion);
+          activeInputEntry.isValidPart = Boolean(!toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isHesitationOnly && (curParts.hasCare || curParts.hasWayOrReason || curParts.hasSuggestion));
         }
         const isSingleTurnFull = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 5;
-        const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 2;
+        const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 1;
 
         // Build rich context so BOTH the existing deployed Worker AND the updated Worker respond spontaneously
         const priorTurnsDesc = sceneMemory.turns.length > 0
@@ -2438,9 +2441,19 @@
         if (activeInputEntry) {
           activeInputEntry.status = "winner";
         }
-        if (result.completedViaMultiTurn) {
+        const finalHasCare = Boolean(curParts.hasCare);
+        const finalHasWay = Boolean(curParts.hasWayOrReason);
+        const finalHasSug = Boolean(curParts.hasSuggestion);
+        if (result.completedViaMultiTurn || !finalHasWay || !finalHasSug || !finalHasCare) {
           currentTryInputs.forEach(item => {
-            if (item.status === "partial_good") item.status = "winner";
+            if (item !== activeInputEntry && item.status === "partial_good") {
+              const suppliesMissingWay = !finalHasWay && item.hasWayOrReason;
+              const suppliesMissingSug = !finalHasSug && item.hasSuggestion;
+              const suppliesMissingCare = !finalHasCare && item.hasCare;
+              if (suppliesMissingWay || suppliesMissingSug || suppliesMissingCare) {
+                item.status = "winner";
+              }
+            }
           });
         }
         allScenarioInputs[currentTryIdx] = currentTryInputs.slice();
