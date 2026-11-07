@@ -769,7 +769,9 @@
             title: "🏆 Golden Ending: Healthy Bowling Date!",
             line: "That bowling match was awesome! Thank you for reminding me to avoid quiet places and respect our limits. I feel much closer to you now!",
             commentS: "Well done! You avoided quiet places, set limits, and suggested bowling politely.",
-            commentA: "Good job! You stayed safe, set limits, and suggested a healthy activity."
+            commentA: "Good job! You stayed safe, set limits, and suggested a healthy activity.",
+            commentB: "Good effort! You used the Play-Safe Builder to refuse politely and stay safe.",
+            commentC: "You stayed safe with the Play-Safe Builder. Practise saying the sentence yourself!"
           }
         },
 
@@ -857,7 +859,9 @@
             title: "🏆 Golden Ending: Sunny Basketball High-Five!",
             line: "Playing basketball in the sun cleared my head completely! Thanks for helping me avoid quiet locked rooms and 18+ videos, and for setting clear limits!",
             commentS: "Well done! You refused all 3 risky situations politely and suggested basketball.",
-            commentA: "Good job! You used the coping ways well and showed self-discipline and respect."
+            commentA: "Good job! You used the coping ways well and showed self-discipline and respect.",
+            commentB: "Good effort! You used the Play-Safe Builder to refuse politely and stay safe.",
+            commentC: "You stayed safe with the Play-Safe Builder. Practise saying the sentence yourself!"
           }
         },
 
@@ -942,7 +946,9 @@
             title: "🏆 Golden Ending: Harbourfront Cycling Date!",
             line: "Cycling by the harbourfront feels amazing! I'm so glad you helped us avoid quiet places, stay away from 18+ websites, and respect our limits!",
             commentS: "Well done! You refused all 3 risky situations politely and suggested cycling.",
-            commentA: "Good job! You used the coping ways well and showed self-discipline and respect."
+            commentA: "Good job! You used the coping ways well and showed self-discipline and respect.",
+            commentB: "Good effort! You used the Play-Safe Builder to refuse politely and stay safe.",
+            commentC: "You stayed safe with the Play-Safe Builder. Practise saying the sentence yourself!"
           }
         }
       };
@@ -975,6 +981,8 @@
       let mistakesCount = 0;
       let conflictsCount = 0;
       let hintsUsedCount = 0;
+      let playSafeScenesCount = 0;
+      let currentScenePlaySafeTriggered = false;
       let tryVagueCount = 0;
       let tryRudeCount = 0;
       let isEnded = false;
@@ -1226,10 +1234,26 @@
           kwHeaderLabel.textContent = "🔑 Visual Keyword Clues (Use these in your sentence!):";
         }
         keywordPills.style.display = "flex";
-        setFramesCollapse(true);
+        if (totalTriesOnScene === 1) {
+          setFramesCollapse(true);
+          return;
+        }
 
         // Stage 3: After 2 failed/vague/rude tries -> Auto-Unlock Level 2 Play-Safe 3-Tap Word Builder!
         if (totalTriesOnScene >= 2) {
+          if (!currentScenePlaySafeTriggered) {
+            currentScenePlaySafeTriggered = true;
+            playSafeScenesCount += 1;
+          }
+          const moreHelpBtn = document.getElementById("moreHelpToggleBtn");
+          const moreHelpBody = document.getElementById("moreHelpBody");
+          const moreHelpLabel = document.getElementById("moreHelpLabel");
+          const moreHelpArrow = document.getElementById("moreHelpArrow");
+          if (moreHelpBody) moreHelpBody.hidden = true;
+          if (moreHelpBtn) moreHelpBtn.setAttribute("aria-expanded", "false");
+          if (moreHelpLabel) moreHelpLabel.textContent = "💡 Need more help?";
+          if (moreHelpArrow) moreHelpArrow.textContent = "▾";
+          setFramesCollapse(false);
           const trig = (step.triggerName || "").toLowerCase();
           let wayOption1 = { label: "🚪 avoid quiet places because a quiet room alone is unsafe", text: "avoid quiet places because a quiet room alone is unsafe" };
           let wayOption2 = { label: "🛑 set limits of intimacy because true love respects limits", text: "set limits of intimacy because true love respects limits" };
@@ -1275,7 +1299,7 @@
               <button type="button" class="top-btn" id="psListenBtn" style="font-weight:800;">🔊 Listen &amp; Read Aloud</button>
             </div>
           `;
-          frameList.appendChild(psDiv);
+          missionHud.appendChild(psDiv);
 
           function ensureDefaultPickedIfNone() {
             ["#psCareRow", "#psWayRow", "#psSugRow"].forEach(rowSel => {
@@ -1340,6 +1364,7 @@
         clearInputBoxCompletely();
         tryVagueCount = 0;
         tryRudeCount = 0;
+        currentScenePlaySafeTriggered = false;
 
         const scen = SCENARIOS[currentScenarioKey];
         const step = scen.tries[currentTryIdx];
@@ -1459,19 +1484,30 @@
 
         if (endingType === "golden") {
           endData = scen.goldenEnding;
-          grade = hintsUsedCount === 0 ? "S" : "A";
-          defaultComment = grade === "S" ? endData.commentS : endData.commentA;
+          if (hintsUsedCount === 0 && playSafeScenesCount === 0) {
+            grade = "S";
+            defaultComment = endData.commentS;
+          } else if (playSafeScenesCount === 0 && hintsUsedCount <= 2) {
+            grade = "A";
+            defaultComment = endData.commentA;
+          } else if (playSafeScenesCount <= 1 && hintsUsedCount <= 3) {
+            grade = "B";
+            defaultComment = endData.commentB || endData.commentA;
+          } else {
+            grade = "C";
+            defaultComment = endData.commentC || endData.commentB || endData.commentA;
+          }
           finalValuesUsed.textContent = "Values Practised: Self-Discipline · Respect for Others (Warm & Caring Tone) · Responsibility · Law-abidingness";
           playSfx("golden");
         } else if (endingType === "conflict_coldwar") {
           endData = SHARED_ENDINGS.conflict_coldwar;
-          grade = conflictsCount <= 1 ? "B" : "C";
+          grade = (conflictsCount <= 1 && playSafeScenesCount === 0 && hintsUsedCount <= 1) ? "B" : "C";
           defaultComment = grade === "B" ? endData.commentB : endData.commentC;
           finalValuesUsed.textContent = "Values Practised: Self-Discipline (Safe Refusal) — Next Time Add Empathy & Respectful Tone!";
           playSfx("warn");
         } else if (endingType === "close_call") {
           endData = SHARED_ENDINGS.close_call;
-          grade = hintsUsedCount <= 1 ? "B" : "C";
+          grade = (hintsUsedCount <= 1 && playSafeScenesCount === 0 && conflictsCount === 0) ? "B" : "C";
           defaultComment = grade === "B" ? endData.commentB : endData.commentC;
           finalValuesUsed.textContent = "Values Practised: Recovered Self-Discipline & Respect after 1st-Try Warning";
           playSfx("warn");
@@ -2033,6 +2069,8 @@
         mistakesCount = 0;
         conflictsCount = 0;
         hintsUsedCount = 0;
+        playSafeScenesCount = 0;
+        currentScenePlaySafeTriggered = false;
         tryVagueCount = 0;
         tryRudeCount = 0;
         coachText.textContent = "Say 'No' firmly and write the Way to Cope on Part 2 of your worksheet!";
@@ -2122,7 +2160,9 @@
         btnGold.textContent = "Ending: Golden (Grade S)";
         btnGold.addEventListener("click", () => {
           mistakesCount = 0;
+          conflictsCount = 0;
           hintsUsedCount = 0;
+          playSafeScenesCount = 0;
           showEnding("golden");
         });
         teacherBranchBtns.appendChild(btnGold);
@@ -2133,6 +2173,8 @@
         btnColdWar.addEventListener("click", () => {
           mistakesCount = 0;
           conflictsCount = 1;
+          hintsUsedCount = 0;
+          playSafeScenesCount = 0;
           showEnding("conflict_coldwar");
         });
         teacherBranchBtns.appendChild(btnColdWar);
@@ -2142,7 +2184,9 @@
         btnClose.textContent = "Ending: Close Call (Grade B)";
         btnClose.addEventListener("click", () => {
           mistakesCount = 1;
+          conflictsCount = 0;
           hintsUsedCount = 1;
+          playSafeScenesCount = 0;
           showEnding("close_call");
         });
         teacherBranchBtns.appendChild(btnClose);
