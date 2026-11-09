@@ -59,6 +59,43 @@
       border-radius: 999px;
       letter-spacing: 0.03em;
     }
+    .brand-logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .worker-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+      cursor: pointer;
+      background-color: #eab308;
+      box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.25), 0 0 6px rgba(234, 179, 8, 0.7);
+      transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+    }
+    .worker-dot:hover {
+      transform: scale(1.2);
+    }
+    .worker-dot.checking {
+      background-color: #eab308;
+      box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.28), 0 0 6px rgba(234, 179, 8, 0.75);
+      animation: workerDotPulse 1.2s infinite ease-in-out;
+    }
+    .worker-dot.online {
+      background-color: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25), 0 0 6px rgba(34, 197, 94, 0.75);
+    }
+    .worker-dot.offline {
+      background-color: #ef4444;
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), 0 0 6px rgba(239, 68, 68, 0.75);
+    }
+    @keyframes workerDotPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.9); }
+    }
     .brand-title {
       font-weight: 800;
       font-size: 1.05rem;
@@ -663,7 +700,10 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-logo">S3 CES · SoftSpeak</span>
+      <span class="brand-logo-wrap">
+        <span class="brand-logo">S3 CES · SoftSpeak</span>
+        <span class="worker-dot checking" id="workerStatusDot" role="button" tabindex="0" title="AI Worker: Checking…" aria-label="AI Worker: Checking…"></span>
+      </span>
       <span class="brand-title">Coping with Sexual Fantasies &amp; Impulses</span>
     </div>
     <div class="top-controls">
@@ -1167,6 +1207,7 @@
       const coachText = document.getElementById("coachText");
       const teacherDrawer = document.getElementById("teacherDrawer");
       const workerUrlInput = document.getElementById("workerUrlInput");
+      const workerStatusDot = document.getElementById("workerStatusDot");
       const accentSelect = document.getElementById("accentSelect");
       const teacherBranchBtns = document.getElementById("teacherBranchBtns");
 
@@ -1176,8 +1217,72 @@
         workerUrlInput.value = DEFAULT_WORKER_URL;
       }
 
+      function setWorkerDotState(state, detail) {
+        if (!workerStatusDot) return;
+        workerStatusDot.className = "worker-dot " + state;
+        const label = state === "online"
+          ? "AI Worker: Connected & working" + (detail ? " (" + detail + ")" : "") + " — Click to re-check"
+          : state === "checking"
+            ? "AI Worker: Checking connection…"
+            : "AI Worker: Not connected / not working" + (detail ? " (" + detail + ")" : "") + " — Click to re-check";
+        workerStatusDot.title = label;
+        workerStatusDot.setAttribute("aria-label", label);
+      }
+
+      async function checkWorkerStatus() {
+        const url = (workerUrlInput.value || DEFAULT_WORKER_URL).trim();
+        if (!url) {
+          setWorkerDotState("offline", "No URL");
+          return false;
+        }
+        setWorkerDotState("checking");
+        const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 6000) : null;
+        try {
+          const healthUrl = url.replace(/\/+$/, "") + "/health";
+          let resp = await fetch(healthUrl, {
+            method: "GET",
+            cache: "no-store",
+            signal: ctrl ? ctrl.signal : undefined
+          });
+          if (resp.ok) {
+            setWorkerDotState("online");
+            return true;
+          }
+          resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "ping" }),
+            signal: ctrl ? ctrl.signal : undefined
+          });
+          const ct = (resp.headers.get("content-type") || "").toLowerCase();
+          if (resp.ok || (resp.status === 400 && ct.includes("application/json"))) {
+            setWorkerDotState("online");
+            return true;
+          }
+          setWorkerDotState("offline", "HTTP " + resp.status);
+          return false;
+        } catch (err) {
+          setWorkerDotState("offline");
+          return false;
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }
+
+      if (workerStatusDot) {
+        workerStatusDot.addEventListener("click", () => { checkWorkerStatus(); });
+        workerStatusDot.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            checkWorkerStatus();
+          }
+        });
+      }
+
       workerUrlInput.addEventListener("change", () => {
         try { localStorage.setItem("ces_softspeak_worker_url", workerUrlInput.value.trim() || DEFAULT_WORKER_URL); } catch (e) {}
+        checkWorkerStatus();
       });
 
       function setStageArt(srcUrl) {
@@ -2282,12 +2387,16 @@
               body: JSON.stringify(payload)
             });
             if (resp.ok) {
+              setWorkerDotState("online");
               const data = await resp.json();
               if (data && data.decision) {
                 result = data;
               }
+            } else {
+              setWorkerDotState("offline", "HTTP " + resp.status);
             }
           } catch (e) {
+            setWorkerDotState("offline");
           } finally {
             sendBtn.disabled = false;
             sendBtn.textContent = "Send";
@@ -2939,6 +3048,7 @@
       }
 
       restartScenario();
+      checkWorkerStatus();
     })();
   </script>
 </body>
