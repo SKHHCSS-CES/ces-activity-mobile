@@ -822,8 +822,8 @@
         <input type="text" id="workerUrlInput" placeholder="https://ces-softspeak.skhhcss-eng.workers.dev" />
         <label for="accentSelect">Speech Recognition Accent:</label>
         <select id="accentSelect">
+          <option value="en-HK" selected>Hong Kong English (en-HK)</option>
           <option value="en-GB">British English (en-GB)</option>
-          <option value="en-HK">Hong Kong English (en-HK)</option>
           <option value="en-US">US English (en-US)</option>
         </select>
         <div style="margin-top:10px; font-size:0.8rem; font-weight:700; color:var(--ink);">⚡ Quick Scene &amp; Ending Jump:</div>
@@ -1216,6 +1216,18 @@
       } catch (e) {
         workerUrlInput.value = DEFAULT_WORKER_URL;
       }
+
+      try {
+        accentSelect.value = localStorage.getItem("ces_softspeak_accent") || "en-HK";
+      } catch (e) {
+        accentSelect.value = "en-HK";
+      }
+
+      accentSelect.addEventListener("change", () => {
+        try {
+          localStorage.setItem("ces_softspeak_accent", accentSelect.value);
+        } catch (e) {}
+      });
 
       function setWorkerDotState(state, detail) {
         if (!workerStatusDot) return;
@@ -2797,7 +2809,7 @@
         const activeSession = micSessionId;
 
         recognition = new SpeechRec();
-        recognition.lang = accentSelect.value || "en-GB";
+        recognition.lang = accentSelect.value || "en-HK";
         // Disable continuous=true on iOS & Android to prevent Android duplicate cumulative results and iOS Safari stalls
         recognition.continuous = !(isIOSDevice || isAndroidDevice);
         recognition.interimResults = true;
