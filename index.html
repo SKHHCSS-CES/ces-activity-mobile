@@ -393,12 +393,58 @@
       display: block;
       padding: 2px 0;
     }
+    .reply-line-partial {
+      display: block;
+      background: #e6f4f8;
+      border: 1.5px solid var(--teal-border);
+      border-left: 4px solid var(--teal);
+      color: var(--ink);
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-weight: 800;
+      margin: 4px 0;
+    }
     .reply-line-dim {
       display: block;
       color: #94a3b8;
       font-weight: 600;
       font-size: 0.9rem;
       padding: 2px 0;
+    }
+    .hl-risk-word {
+      background: var(--red-soft);
+      color: var(--red);
+      padding: 1px 5px;
+      border-radius: 5px;
+      font-weight: 800;
+    }
+    .hl-safe-word {
+      background: var(--green-soft);
+      color: var(--green);
+      padding: 1px 5px;
+      border-radius: 5px;
+      font-weight: 800;
+    }
+    .formula-progress-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 2px 0 8px 0;
+    }
+    .fp-badge {
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      transition: all 0.18s ease;
+    }
+    .fp-badge.done {
+      background: var(--green-soft);
+      color: var(--green);
+      border-color: #86efac;
     }
     .report-card {
       background: #fff;
@@ -793,6 +839,13 @@
         <div class="coping-title" id="targetCopingTitle">Way C: Avoid Quiet Places (Choose a Public Place)</div>
         <span class="value-badge" id="targetValueBadge">🌟 Value: Responsibility &amp; Self-Discipline</span>
 
+        <div class="formula-progress-row" id="formulaProgressRow" aria-label="4-Part Refusal Progress">
+          <span class="fp-badge" id="fpCare">[ care ]</span>
+          <span class="fp-badge" id="fpWay">[ way to cope ]</span>
+          <span class="fp-badge" id="fpReason">[ reason ]</span>
+          <span class="fp-badge" id="fpSuggestion">[ suggestion ]</span>
+        </div>
+
         <div id="kwHeaderLabel" style="font-size:0.88rem; font-weight:800; color:var(--teal); margin:4px 0 4px 0;">🎯 Step 1: Try speaking or typing by yourself first!</div>
         <div class="kw-wrap" id="keywordPills"></div>
 
@@ -1153,9 +1206,13 @@
       let sceneMemory = {
         turns: [],
         careText: "",
+        wayText: "",
+        reasonText: "",
         wayAndReasonText: "",
         suggestionText: "",
         hasCare: false,
+        hasWay: false,
+        hasReason: false,
         hasWayOrReason: false,
         hasReasonDetail: false,
         hasSuggestion: false
@@ -1258,7 +1315,13 @@
             signal: ctrl ? ctrl.signal : undefined
           });
           if (resp.ok) {
-            setWorkerDotState("online");
+            let hData = null;
+            try { hData = await resp.json(); } catch (e) {}
+            if (hData && hData.hasApiKey === false) {
+              setWorkerDotState("offline", "Missing API key");
+              return false;
+            }
+            setWorkerDotState("online", hData && hData.model ? hData.model : "");
             return true;
           }
           resp = await fetch(url, {
@@ -1362,8 +1425,9 @@
           return;
         }
         studentReplyTag.textContent = `💬 What You Said (${stepLabel})`;
-        studentReplyHint.textContent = "📝 Write on Worksheet";
-        studentReplyHint.hidden = !currentTryCleared;
+        const hasPartialGood = !currentTryCleared && currentTryInputs.some(x => x.status === "partial_good");
+        studentReplyHint.textContent = currentTryCleared ? "📝 Write on Worksheet" : "✨ Partial Progress Saved";
+        studentReplyHint.hidden = !(currentTryCleared || hasPartialGood);
         if (!currentTryInputs.length) {
           studentReplyBox.classList.remove("has-input");
           studentReplyText.classList.add("empty-state");
@@ -1381,10 +1445,28 @@
               }
               return `<span class="reply-line-dim">${body}</span>`;
             }
+            if (item.status === "partial_good") {
+              return `<span class="reply-line-partial">✓ ${body} <em style="font-weight:700; font-size:0.84rem; color:var(--teal);">(Credited — add missing part!)</em></span>`;
+            }
             return `<span class="reply-line-normal">${body}</span>`;
           }).join("");
           studentReplyText.innerHTML = linesHtml;
         }
+      }
+
+      function updateFormulaProgressUI() {
+        const map = [
+          { id: "fpCare", done: Boolean(sceneMemory.hasCare), label: "care" },
+          { id: "fpWay", done: Boolean(sceneMemory.hasWay), label: "way to cope" },
+          { id: "fpReason", done: Boolean(sceneMemory.hasReason), label: "reason" },
+          { id: "fpSuggestion", done: Boolean(sceneMemory.hasSuggestion), label: "suggestion" }
+        ];
+        map.forEach(item => {
+          const el = document.getElementById(item.id);
+          if (!el) return;
+          el.classList.toggle("done", item.done);
+          el.textContent = item.done ? `✓ [ ${item.label} ]` : `[ ${item.label} ]`;
+        });
       }
 
       function resetSceneMemory() {
@@ -1393,13 +1475,18 @@
         sceneMemory = {
           turns: [],
           careText: "",
+          wayText: "",
+          reasonText: "",
           wayAndReasonText: "",
           suggestionText: "",
           hasCare: false,
+          hasWay: false,
+          hasReason: false,
           hasWayOrReason: false,
           hasReasonDetail: false,
           hasSuggestion: false
         };
+        updateFormulaProgressUI();
         updateStudentReplyDisplay();
       }
 
@@ -1560,10 +1647,6 @@
 
         // Stage 3: After 2 failed/vague/rude tries -> Auto-Unlock Level 2 Play-Safe 3-Tap Word Builder!
         if (totalTriesOnScene >= 2) {
-          if (!currentScenePlaySafeTriggered) {
-            currentScenePlaySafeTriggered = true;
-            playSafeScenesCount += 1;
-          }
           const moreHelpBtn = document.getElementById("moreHelpToggleBtn");
           const moreHelpBody = document.getElementById("moreHelpBody");
           const moreHelpLabel = document.getElementById("moreHelpLabel");
@@ -1663,6 +1746,10 @@
               this.textContent = "👆 Pick 1 choice in rows 1, 2 & 3 first!";
               setTimeout(() => { this.textContent = origText; }, 1600);
               return;
+            }
+            if (!currentScenePlaySafeTriggered) {
+              currentScenePlaySafeTriggered = true;
+              playSafeScenesCount += 1;
             }
             textInput.value = buildPlaySafeSentence();
             handleLiveInput();
@@ -1891,7 +1978,7 @@
           const combinedCheck = (wSum + " " + wImp).toLowerCase();
           const mentionsUiMechanics = /play-safe|playsafe|builder|button|click|tap/i.test(combinedCheck);
           const repeatsWaysOnly = /ways to cope|avoid quiet places|stay away from pornography|set limits of intimacy/i.test(wImp);
-          if (wSum && wImp && sumWords <= 9 && impWords <= 9 && !mentionsUiMechanics && !repeatsWaysOnly && endingType === "golden") {
+          if (wSum && wImp && sumWords <= 12 && impWords <= 12 && !mentionsUiMechanics && !repeatsWaysOnly && endingType === "golden") {
             return formatPointFormReport(wSum, splitTurnScenesCount > 0 ? diagnosticImp : wImp);
           }
         }
@@ -2025,36 +2112,102 @@
         updateStudentReplyDisplay();
       }
 
+      function detectUnsafeGiveIn(studentText) {
+        const raw = String(studentText || "").trim();
+        if (!raw) return { isGiveIn: false, reason: "" };
+        const low = raw.toLowerCase().replace(/[\u2018\u2019]/g, "'");
+
+        // Allow Play-Safe Builder chip-mistake sentences to receive Play-Safe row correction hints
+        const isPlaySafeBuilderSentence =
+          /,\s*but we should\s+.+\.\s*let's\s+.+\s+instead!$/i.test(raw) &&
+          /\b(keep our door locked|watch the 18\+ video together|give in to close touch|for just ten more minutes|for one minute and delete it|move to a darker corner)\b/i.test(low);
+        if (isPlaySafeBuilderSentence) {
+          return { isGiveIn: false, reason: "" };
+        }
+
+        // Conditional adulthood/marriage boundary ("kiss me only when we are married") is vague, not give-in
+        if (/\b(kiss me|touch me|hold me|go up|watch it)\s+(only|when|if|after|once|unless)\b/i.test(low)) {
+          return { isGiveIn: false, reason: "" };
+        }
+
+        const hesitationRx = /\b(shy|nervous|embarrassed|scared|afraid|uncomfortable|not ready|too fast|too close|too young|under 16|awkward|weird|worry|worried|unsure|hesitate)\b/i;
+
+        // 1. Bare agreement to the partner's temptation
+        const bareGiveInRx = /^(?:ok|okay|yes|yeah|yep|yup|sure|alright|all right|why not|let's do it|lets do it|let's go|lets go|(?:(?:ok|okay|yes|yeah|yep|yup|sure|alright|all right|fine)\s+)+(?:let's do it|lets do it|let's go|lets go|why not|i want to|go ahead|sure|sounds good)|ok let's go|okay let's go|okay sure|sure why not|i want to|go ahead|sounds good|good idea|fine|deal|yay)[.!\s]*$/i;
+        if (bareGiveInRx.test(low)) {
+          return { isGiveIn: true, reason: "agreed directly to the risky situation" };
+        }
+
+        // 2. Clause-by-clause check for private-place invitations/agreements & temptation give-ins
+        const normalized = low
+          .replace(/\binstead\s+of\b/g, "instead_of")
+          .replace(/\brather\s+than\b/g, "rather_than")
+          .replace(/^(?:no|nah|nope)\s+(?=(?:let's|lets|we can|how about|why don't we|come|go\s+to\s+my)\b)/i, "no, ");
+
+        const clauses = normalized
+          .split(/[,.;!?—–]+|\b(?:but|however|though|although|so|then)\b/i)
+          .map(c => c.trim())
+          .filter(Boolean);
+
+        const clauseNegationRx = /\b(no|not|never|don't|dont|do not|shouldn't|should not|can't|cannot|cant|mustn't|must not|won't|wont|will not|avoid|avoiding|refuse|stop|leave|out of|away from|instead_of|rather_than|say no)\b/i;
+        const clauseRiskLabelRx = /\b(unsafe|not safe|dangerous|risky|wrong|bad|harmful|unhealthy|tempting|temptation|impulse|impulses|too quiet|not good|bad idea|illegal|under 16|regret|trouble|scared|afraid|uncomfortable)\b/i;
+
+        const privatePlaceGiveInRx = /\b(?:(?:go|come|head|walk|sneak|get|stay|be|sit|chill|hang out|dry off|study)\s+(?:up\s+)?(?:to|into|inside|in|at)\s+(?:your|my|our)\s+(?:quiet\s+|empty\s+)?(?:place|flat|apartment|room|bedroom|house|home|bed)|(?:your|my)\s+(?:quiet\s+|empty\s+)?(?:place|flat|apartment|room|bedroom|house)|come\s+to\s+my\s+home|(?:let's|lets|we can|i'll|i will|shall we)\s+(?:just\s+)?(?:go|come)\s+up(?:stairs)?|\bcome\s+up(?:stairs)?\s+with\s+me|\block\s+the\s+(?:party\s+room\s+)?door|\bkeep\s+(?:the|our)\s+door\s+locked|\bstay\s+(?:here\s+)?alone|\b(?:go|stay|up|inside)\s+(?:there\s+|here\s+)?for\s+(?:just\s+)?(?:\d+|five|ten|fifteen|twenty|thirty|a few)\s+(?:more\s+)?minutes|\bjust\s+(?:for\s+)?(?:\d+|five|ten|fifteen|twenty|thirty|a few)\s+minutes)\b/i;
+
+        const mediaGiveInRx = /\b(?:(?:let's|lets|we can|i want to|wanna)\s+(?:just\s+)?(?:watch|look at|see|open|check out)\s+(?:it|that|this|the\s+(?:18\+\s+)?(?:video|clip|movie|website|page|site)|18\+|porn|pornography)|show\s+me\s+(?:the\s+(?:18\+\s+)?(?:video|clip|website|page)|18\+|it)|watch\s+(?:the\s+)?18\+|just\s+one\s+(?:peek|minute|look))\b/i;
+
+        const physicalGiveInRx = /\b(?:kiss\s+me|touch\s+me|hold\s+me\s+closely|hug\s+me\s+closely|(?:let's|lets|we can)\s+(?:kiss|touch|hold\s+each\s+other\s+closely|cross\s+the\s+line|do\s+it\s+just\s+once)|cross\s+the\s+line\s+just\s+once)\b/i;
+
+        for (const clause of clauses) {
+          if (clauseRiskLabelRx.test(clause)) {
+            continue;
+          }
+          const mPriv = privatePlaceGiveInRx.exec(clause);
+          if (mPriv && !clauseNegationRx.test(clause.slice(0, mPriv.index))) {
+            return { isGiveIn: true, reason: "agreed or invited to go to a private place" };
+          }
+          const mMedia = mediaGiveInRx.exec(clause);
+          if (mMedia && !clauseNegationRx.test(clause.slice(0, mMedia.index))) {
+            return { isGiveIn: true, reason: "agreed to watch or look at 18+ media" };
+          }
+          const mPhys = physicalGiveInRx.exec(clause);
+          if (mPhys && !hesitationRx.test(clause) && !clauseNegationRx.test(clause.slice(0, mPhys.index))) {
+            return { isGiveIn: true, reason: "agreed to cross physical intimacy limits" };
+          }
+        }
+
+        return { isGiveIn: false, reason: "" };
+      }
+
       function analyzeTurnParts(step, studentText) {
         const raw = String(studentText || "").trim();
-        const t = raw.toLowerCase();
+        const t = raw.toLowerCase().replace(/[\u2018\u2019]/g, "'");
         const trig = (step.triggerName || "").toLowerCase();
-        const words = t.replace(/[^a-z0-9\s\+']/gi, " ").split(/\s+/).filter(Boolean);
+        const words = t.replace(/[^a-z0-9\s+']/gi, " ").split(/\s+/).filter(Boolean);
         const wordCount = words.length;
 
-        const careRx = /\b(i care|care about you|i like you|like being with you|i love you|love you|you are important|you're important|my dear|sweetie|honey|sorry|i'm sorry|i am sorry|please understand|thank you|thanks|appreciate)\b/i;
+        const careRx = /\b(i care|care about|i like you|like being with|i love you|love you|you are important|you're important|important to me|special to me|value our|treasure|my dear|sweetie|honey|sorry|i'm sorry|i am sorry|please understand|thank you|thanks|appreciate|don't be sad|dont be sad|don't be angry|dont be angry|you're sweet|you are sweet)\b/i;
         const hasCare = careRx.test(t);
 
-        const reasonCueRx = /\b(because|since|as|unsafe|not safe|dangerous|risky|wrong|bad|harmful|unhealthy|twist|twists|fake|disrespect|respect|limits|boundaries|too young|under 16|below 16|illegal|law|parents|mum|mom|dad|family|regret|pregnant|pregnancy|std|stds|health|future|not ready|uncomfortable|scared|afraid|shy|nervous|impulse|impulses|fantasy|self-discipline|energy|tempting|temptation|alone is|not good|shouldn't|should not|must not|cannot|can't)\b/i;
-        const hasReasonDetail = reasonCueRx.test(t);
+        const reasonCueRx = /\b(because|since|as|unsafe|not safe|dangerous|risky|wrong|bad|harmful|unhealthy|twist|twists|fake|wrong ideas|wrong values|fake ideas|disrespect|true love|respects limits|too young|only 13|only 14|only 15|14 years old|15 years old|under 16|below 16|illegal|against the law|break the law|law|parents|mum|mom|dad|family|teacher|trouble|regret|pregnant|pregnancy|std|stds|infection|health|future|not ready|uncomfortable|scared|afraid|impulse|impulses|lose control|can't control|cannot control|tempting|temptation|alone is|nobody is home|too quiet|too private|bad idea|not good)\b/i;
 
-        // Universal A1/A2 refusal & reason phrases valid across all risky situations (e.g. "it is wrong", "unsafe", "we are too young", "bad for us")
-        const generalRefusalOrReasonRx = /\b(it is wrong|it's wrong|that is wrong|that's wrong|this is wrong|is wrong|it is bad|it's bad|that is bad|this is bad|bad for us|bad for our|not good|not good for us|unsafe|not safe|dangerous|too dangerous|risky|too risky|harmful|unhealthy|too young|under 16|below 16|illegal|against the law|break the law|not ready|we are students|still students|parents will|mum will|mom will|dad will|family will|hurt our|hurt us|regret|respect each other|respect limits|respect my limits|respect our limits|set limits|limits of intimacy|control ourselves|control our desires|self-discipline|true love|wrong ideas|wrong idea|give wrong ideas|gives wrong ideas|bad ideas|fake ideas|twist love|twists love|we shouldn't|we should not|we can't|we cannot|we must not|don't do this|do not do this|stop doing this)\b/i;
+        // Universal A1/A2 refusal phrases valid across all risky situations
+        const generalRefusalWayRx = /\b(we shouldn't|we should not|we can't|we cannot|we must not|we mustn't|let's not|lets not|i don't want to|i dont want to|i do not want to|don't do this|do not do this|stop doing this|refuse|control ourselves|control our desires|self-discipline|respect each other|respect limits|respect my limits|respect our limits|set limits|limits of intimacy|keep boundaries|set boundaries)\b/i;
 
-        // 1. Quiet Place specific refusal
-        const quietAvoidRx = /\b(avoid|not|don't|dont|do not|no|never|unsafe|not safe|dangerous|leave|go out|shouldn't|should not|can't|cannot|bad|wrong|risky|scared|afraid|shy|nervous|uncomfortable|mum|mom|dad|parents)\b.*\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|house|locked|lock|door|alone|dark|stay here|go up|come up|inside|it|that|this)\b|\b(quiet|empty|flat|bedroom|room|rooms|place|places|upstairs|locked|lock|door|alone|dark|it|that|this|staying here|going up)\b.*\b(unsafe|not safe|dangerous|bad|wrong|risky|harmful|no|not|avoid|shouldn't|should not|don't|dont|can't|cannot)\b|\b(avoid quiet|not go up|don't go up|dont go up|don't lock|dont lock|keep the door open|open the door|not stay alone|don't stay alone|alone is unsafe|not safe alone|too quiet|nobody is home|nobody at home|parents are not home)\b/i;
+        // 1. Quiet Place specific way/refusal
+        const quietWayRx = /\b(avoid|not|don't|dont|do not|no|never|leave|go out|stay out|shouldn't|should not|can't|cannot|mustn't|must not)\b.*\b(quiet|empty|private|flat|apartment|bedroom|room|rooms|place|places|upstairs|house|home|locked|lock|door|alone|dark|stay here|go up|come up|inside|it|that|this)\b|\b(quiet|empty|private|flat|apartment|bedroom|room|rooms|place|places|upstairs|house|locked|lock|door|alone|dark|staying here|going up)\b.*\b(no|not|avoid|shouldn't|should not|don't|dont|can't|cannot)\b|\b(avoid quiet|avoid empty|avoid private|not go up|don't go up|dont go up|don't lock|dont lock|keep the door open|open the door|not stay alone|don't stay alone|dont stay alone|stay in public|choose a public|go to a public)\b/i;
 
-        // 2. Pornography (18+ video / website) specific refusal
-        const pornRefuseRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|bad|wrong|twist|twists|harmful|disrespect|unhealthy|not good|shouldn't|should not|can't|cannot)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this|watch|watching|look|looking)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this|watching|looking)\b.*\b(off|away|close|wrong|bad|twist|twists|harmful|unhealthy|not good|stop|no|not|don't|dont|shouldn't|should not|illegal)\b|\b(stay away from pornography|turn it off|close it|put your phone away|close the tablet)\b/i;
+        // 2. Pornography (18+ video / website) specific way/refusal
+        const pornWayRx = /\b(stay away|turn off|turn it off|switch off|close|put away|delete|hide|don't watch|dont watch|not watch|stop watching|don't look|dont look|not look|no|stop|avoid|shouldn't|should not|can't|cannot|mustn't|must not)\b.*\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|it|that|this|watch|watching|look|looking)\b|\b(porn|pornography|18\+|18 plus|eighteen|video|videos|clip|movie|website|websites|site|web|page|tablet|ipad|phone|screen|adult|media|watching|looking)\b.*\b(off|away|close|stop|no|not|don't|dont|shouldn't|should not)\b|\b(stay away from pornography|turn it off|close it|put your phone away|put the phone away|close the tablet)\b/i;
 
-        // 3. Close Physical Touch specific refusal
-        const touchLimitRx = /\b(limit|limits|intimacy|intimate|boundary|boundaries|respect|uncomfortable|not ready|shy|nervous|scared|afraid|cross the line|too close|too fast|too young|under 16|illegal|law|self-discipline|control ourselves|control desires|true love)\b|\b(no|not|don't|dont|do not|stop|never|shouldn't|should not|can't|cannot|wait|bad|wrong|unsafe|risky)\b.*\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|close|closely|prove|force|pressur|corner|line|it|that|this|now|here)\b|\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|it|that|this)\b.*\b(wrong|bad|unsafe|risky|too close|too fast|not ready|uncomfortable|illegal|no|stop|don't|dont|shouldn't|should not)\b|\b(love is not about touching|don't touch|dont touch|stop touching|please stop|keep our distance)\b/i;
+        // 3. Close Physical Touch specific way/refusal
+        const touchWayRx = /\b(set limits|limits of intimacy|keep our limits|respect my limits|respect our limits|boundary|boundaries|keep our distance|love is not about touching|don't touch|dont touch|stop touching|don't kiss|dont kiss|don't hold|please stop)\b|\b(no|not|don't|dont|do not|stop|never|shouldn't|should not|can't|cannot|wait)\b.*\b(touch|touching|kiss|kissing|hold|holding|hug|hugging|close|closely|prove|force|pressur|corner|line|it|that|this|now|here)\b/i;
 
-        // Safe public places & healthy activities / study / date alternatives
-        const safePlaceOrActivityRx = /\b(public|school|classroom|campus|youth centre|youth center|community centre|community center|study centre|study center|study room|cafe|café|coffee|bakery|library|lounge|downstairs|canteen|restaurant|diner|fast food|mcdonald|mcdonald's|kfc|starbucks|mall|shopping|plaza|square|shop|store|bookstore|bookshop|park|garden|playground|court|sports ground|sports centre|sports center|hall|beach|promenade|bright|people around|other people|food court|tea|bubble tea|clubhouse|outside|lobby|cinema|museum|rink|skating|healthy activit|sport|sports|basketball|badminton|bowling|cycling|cycle|bike|bicycle|football|soccer|volleyball|tennis|table tennis|ping pong|swim|swimming|run|running|jog|jogging|walk|walking|hike|hiking|climb|climbing|exercise|workout|gym|volunteer|harbourfront|fresh air|board game|card game|game|games|chess|project|homework|study|studying|revision|read|reading|chat|chatting|talk|talking|eat|eating|lunch|dinner|snack|ice cream|picnic|drink|music|sing|singing|karaoke|dance|dancing|draw|paint|cook|bake|go out)\b/i;
+        // Safe public places & healthy activities / study / food / date alternatives
+        const safePlaceOrActivityRx = /\b(public|school|classroom|campus|youth centre|youth center|community centre|community center|study centre|study center|study room|cafe|café|coffee|starbucks|pacific coffee|bakery|library|lounge|downstairs|canteen|restaurant|diner|fast food|mcdonald|mcdonald's|kfc|fairwood|cafe de coral|sushi|ramen|noodles|dim sum|pizza|burger|hotpot|snack|ice cream|dessert|bubble tea|tea|drink|food court|7-eleven|convenience store|supermarket|mall|shopping|plaza|square|shop|store|bookstore|bookshop|park|garden|playground|court|sports ground|sports centre|sports center|hall|beach|promenade|harbourfront|bright|people around|with people|other people|clubhouse|outside|lobby|cinema|movie|museum|arcade|rink|skating|ice skating|healthy activit|sport|sports|basketball|badminton|bowling|cycling|cycle|bike|bicycle|football|soccer|volleyball|tennis|table tennis|ping pong|swim|swimming|run|running|jog|jogging|walk|walking|hike|hiking|climb|climbing|exercise|workout|gym|volunteer|fresh air|board game|card game|uno|game|games|chess|project|homework|study|studying|revision|read|reading|chat|chatting|talk|talking|eat|eating|lunch|dinner|picnic|music|sing|singing|karaoke|dance|dancing|draw|paint|cook|bake|go out|go home|back home|our own homes|put your phone away|put the phone away|focus on our project)\b/i;
 
         let extractedSuggestion = "";
-        const sugMatch = raw.match(/\b(?:let's|lets|how about we|why don't we|we can|we could|go to|go|play|do|finish|work on|eat at|eat|sit in|sit at|study at|study in|study|head to|rent)\s+([^.?!]+)/i);
+        const sugMatch = raw.match(/\b(?:let's|lets|how about we|why don't we|we can|we could|go to|go|play|do|finish|work on|eat at|eat|get|grab|have|sit in|sit at|study at|study in|study|head to|rent)\s+([^.?!]+)/i);
         if (sugMatch && sugMatch[0]) {
           extractedSuggestion = sugMatch[0].trim();
         }
@@ -2062,30 +2215,36 @@
         const wrongWayRx = /\b(keep our door locked|nobody will know we are inside|watch the 18\+ video together|everyone at school talks about it|give in to close touch|saying no might make you angry)\b/i;
         const wrongSugRx = /\b(stay inside this quiet room|ten more minutes|10 more minutes|only watch the 18\+ clip|for one minute and delete it|move to a darker corner|nobody can see us)\b/i;
         const conditionalGiveInRx = /\b(kiss me|touch me|hold me|go up|watch it)\s+(only|when|if|after|once|unless)\b/i;
+        const giveInCheck = detectUnsafeGiveIn(raw);
         const pickedWrongWay = wrongWayRx.test(t) || conditionalGiveInRx.test(t);
         const pickedWrongSuggestion = wrongSugRx.test(t) || conditionalGiveInRx.test(t);
 
-        let hasWayOrReason = false;
-        let hasSuggestion = !pickedWrongSuggestion && safePlaceOrActivityRx.test(t);
+        let hasWay = false;
+        let hasReason = !pickedWrongWay && !giveInCheck.isGiveIn && reasonCueRx.test(t);
+        let hasSuggestion = !pickedWrongSuggestion && !giveInCheck.isGiveIn && safePlaceOrActivityRx.test(t);
         let usedOtherSceneWay = false;
 
         if (trig.includes("quiet place")) {
-          hasWayOrReason = !pickedWrongWay && (quietAvoidRx.test(t) || generalRefusalOrReasonRx.test(t));
-          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (pornRefuseRx.test(t) || touchLimitRx.test(t));
+          hasWay = !pickedWrongWay && !giveInCheck.isGiveIn && (quietWayRx.test(t) || generalRefusalWayRx.test(t));
+          usedOtherSceneWay = (!hasWay && !hasReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (pornWayRx.test(t) || touchWayRx.test(t));
         } else if (trig.includes("pornography")) {
-          hasWayOrReason = !pickedWrongWay && (pornRefuseRx.test(t) || generalRefusalOrReasonRx.test(t));
-          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietAvoidRx.test(t) || touchLimitRx.test(t));
+          hasWay = !pickedWrongWay && !giveInCheck.isGiveIn && (pornWayRx.test(t) || generalRefusalWayRx.test(t));
+          usedOtherSceneWay = (!hasWay && !hasReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietWayRx.test(t) || touchWayRx.test(t));
         } else {
-          hasWayOrReason = !pickedWrongWay && (touchLimitRx.test(t) || generalRefusalOrReasonRx.test(t));
-          usedOtherSceneWay = (!hasWayOrReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietAvoidRx.test(t) || pornRefuseRx.test(t));
+          hasWay = !pickedWrongWay && !giveInCheck.isGiveIn && (touchWayRx.test(t) || generalRefusalWayRx.test(t));
+          usedOtherSceneWay = (!hasWay && !hasReason && !hasSuggestion && !pickedWrongWay && !pickedWrongSuggestion) && (quietWayRx.test(t) || pornWayRx.test(t));
         }
+
+        const hasWayOrReason = Boolean(hasWay || hasReason);
 
         return {
           raw,
           wordCount,
-          hasCare,
+          hasCare: !giveInCheck.isGiveIn && hasCare,
+          hasWay,
+          hasReason,
           hasWayOrReason,
-          hasReasonDetail,
+          hasReasonDetail: hasReason,
           hasSuggestion,
           usedOtherSceneWay,
           pickedWrongWay,
@@ -2101,7 +2260,9 @@
           { rx: /\bmcdonald'?s\b/i, label: "going to McDonald's" },
           { rx: /\bstarbucks\b/i, label: "going to Starbucks" },
           { rx: /\bkfc\b/i, label: "going to KFC" },
+          { rx: /\b7-eleven|convenience store\b/i, label: "going to 7-Eleven" },
           { rx: /\bbubble tea\b/i, label: "getting bubble tea" },
+          { rx: /\bramen|noodles|sushi|dim sum|pizza|burger\b/i, label: "getting food together in public" },
           { rx: /\bfood court\b/i, label: "going to the food court" },
           { rx: /\bcanteen\b/i, label: "going to the canteen" },
           { rx: /\brestaurant\b/i, label: "going to a restaurant" },
@@ -2112,12 +2273,12 @@
           { rx: /\blibrary\b/i, label: "going to the library" },
           { rx: /\bshopping mall|\bmall\b/i, label: "going to the shopping mall" },
           { rx: /\bpark\b/i, label: "going to the park" },
-          { rx: /\bcinema\b/i, label: "going to the cinema" },
+          { rx: /\bcinema|\bmovie\b/i, label: "going to the cinema" },
           { rx: /\bcafe|\bcafé|\bcoffee\b/i, label: "going to a café" },
           { rx: /\blounge\b/i, label: "sitting in the public lounge" },
           { rx: /\bbadminton\b/i, label: "playing badminton" },
           { rx: /\bfootball|\bsoccer\b/i, label: "playing football" },
-          { rx: /\btable tennis\b/i, label: "playing table tennis" },
+          { rx: /\btable tennis|\bping pong\b/i, label: "playing table tennis" },
           { rx: /\btennis\b/i, label: "playing tennis" },
           { rx: /\bvolleyball\b/i, label: "playing volleyball" },
           { rx: /\bswim|\bswimming\b/i, label: "going swimming" },
@@ -2125,8 +2286,9 @@
           { rx: /\bbowling\b/i, label: "going bowling" },
           { rx: /\bbasketball\b/i, label: "playing basketball" },
           { rx: /\bcycling|\bcycle|\bbike|\bbicycle\b/i, label: "going cycling" },
-          { rx: /\bboard game|\bcard game\b/i, label: "playing a board game" },
+          { rx: /\bboard game|\bcard game|\buno\b/i, label: "playing a board game" },
           { rx: /\bproject|\bhomework|\bstudy\b/i, label: "working on our project" },
+          { rx: /\bgo home|\bback home\b/i, label: "heading home safely" },
           { rx: /\bwalk|\bwalking\b/i, label: "going for a walk" }
         ];
         for (const item of items) {
@@ -2145,19 +2307,17 @@
           if (currentScenarioKey === "ep3_chloe") {
             aiReaction = aiReaction.replace(/sunny harbourfront/gi, "brightly lit harbourfront");
           }
-          // If student suggested something different from the next scene's canonical setting, ensure the partner bridges to the next scene setting
           const aiLow = aiReaction.toLowerCase();
           const aiMentionsCanonical = canonicalKws.some(kw => aiLow.includes(kw.toLowerCase()));
           if (!matchesCanonical && step.nextSceneBridge && !aiMentionsCanonical) {
             const ideaPrefix = studentIdea
               ? `${studentIdea.charAt(0).toUpperCase() + studentIdea.slice(1)} is a good idea!`
-              : "That's a good idea!";
-            return `${aiReaction.replace(/\s+$/, "")} ${ideaPrefix} To make it even easier right now, how about we ${step.nextSceneBridge} instead?`;
+              : "You're right, I respect your decision!";
+            return `${aiReaction.replace(/\s+$/, "")} ${ideaPrefix} How about we ${step.nextSceneBridge} instead?`;
           }
           return aiReaction;
         }
 
-        // Fallback when offline: build a natural bridge if student's suggestion differs from next scene setting
         if (!matchesCanonical && studentIdea && step.nextSceneBridge) {
           const capIdea = studentIdea.charAt(0).toUpperCase() + studentIdea.slice(1);
           return `${capIdea} is a good idea, and I respect your decision! Since we're right here, how about we ${step.nextSceneBridge} instead?`;
@@ -2180,52 +2340,47 @@
           return `Wait—you just talked about giving in or moving to a darker corner where nobody can see us! That makes things even more tempting—what boundaries do you really want us to set?`;
         }
 
-        // React directly to specific everyday excuses/topics students often say
-        if (/\bhungry|\beat|\bfood|\blunch|\bdinner|\bsnack|\bmcdonald|\bkfc|\brestaurant|\bcanteen|\bbubble tea\b/i.test(t)) {
-          if (!curParts.hasWayOrReason && !sceneMem.hasWayOrReason) {
-            return `Getting food or ${studentIdea || "eating together"} sounds yummy! But tell me clearly first—why shouldn't we stay in this ${trig.includes("quiet") ? "quiet room alone" : "situation"} right now?`;
-          }
+        const hasAnyWayOrReason = Boolean(curParts.hasWayOrReason || sceneMem.hasWayOrReason);
+        const hasAnySug = Boolean(curParts.hasSuggestion || sceneMem.hasSuggestion);
+        const hasAnyCare = Boolean(curParts.hasCare || sceneMem.hasCare);
+
+        if (/\bhungry|\beat|\bfood|\blunch|\bdinner|\bsnack|\bmcdonald|\bkfc|\brestaurant|\bcanteen|\bbubble tea\b/i.test(t) && !hasAnyWayOrReason) {
+          return `Getting food or ${studentIdea || "eating together"} sounds yummy! Tell me clearly first—why shouldn't we stay in this ${trig.includes("quiet") ? "quiet room alone" : "situation"} right now?`;
         }
-        if (/\bmum|\bmom|\bdad|\bparents|\bteacher|\bangry|\bscold|\btrouble\b/i.test(t)) {
-          if (!curParts.hasSuggestion && !sceneMem.hasSuggestion) {
-            return `I understand you don't want your parents to worry or be angry! Then tell me—what safe public place or healthy activity should we choose instead?`;
-          }
+        if (/\bmum|\bmom|\bdad|\bparents|\bteacher|\bangry|\bscold|\btrouble\b/i.test(t) && !hasAnySug) {
+          return `I understand you don't want your parents to worry! Then tell me—what safe public place or healthy activity should we choose instead?`;
         }
 
-        // Case A: Student gave a suggestion (e.g. "go to library"), but hasn't stated the Way to Cope / Reason yet
-        if ((curParts.hasSuggestion || sceneMem.hasSuggestion) && !(curParts.hasWayOrReason || sceneMem.hasWayOrReason)) {
+        // Case A: Student gave a suggestion, missing Way to Cope / Reason
+        if (hasAnySug && !hasAnyWayOrReason) {
           const ideaLabel = studentIdea || `"${studentText.trim()}"`;
           if (trig.includes("quiet place")) {
-            return `${ideaLabel.charAt(0).toUpperCase() + ideaLabel.slice(1)} sounds nice, but why can't we just stay here in this quiet place alone? Give me one clear reason why we should avoid quiet places!`;
+            return `${ideaLabel.charAt(0).toUpperCase() + ideaLabel.slice(1)} sounds nice, but why shouldn't we stay in this quiet place alone? Tell me the way to cope or reason!`;
           }
           if (trig.includes("pornography")) {
-            return `Before we do that, tell me clearly why we shouldn't watch this 18+ media and what I should do with the screen!`;
+            return `Before we do that, tell me clearly why we shouldn't watch this 18+ media and tell me to turn off the screen!`;
           }
-          return `${ideaLabel.charAt(0).toUpperCase() + ideaLabel.slice(1)} sounds fun, but why are you pulling back right now? Remind me clearly about our limits of intimacy first!`;
+          return `${ideaLabel.charAt(0).toUpperCase() + ideaLabel.slice(1)} sounds fun, but remind me clearly about our limits of intimacy first!`;
         }
 
-        // Case B: Student refused / gave Way to Cope or Reason, but hasn't given a Suggestion yet
-        if ((curParts.hasWayOrReason || sceneMem.hasWayOrReason) && !(curParts.hasSuggestion || sceneMem.hasSuggestion)) {
-          const alreadyAskedWhere = sceneMem.turns && sceneMem.turns.length >= 1 && !curParts.hasWayOrReason;
+        // Case B: Student refused / gave Way to Cope or Reason, missing Suggestion (ask directly for WHERE/WHAT instead!)
+        if (hasAnyWayOrReason && !hasAnySug) {
+          const careWarmth = curParts.hasCare ? "Aw, thanks for caring about me! " : "";
           if (trig.includes("quiet place")) {
-            if (alreadyAskedWhere) {
-              return `Hmm, "${studentText.trim()}"? Let's pick a clear public place with people around—like a café, library, school study room, or shopping mall! Where should we go?`;
-            }
-            return `Okay, I hear you—staying alone in a quiet place isn't a good idea. Then where should we go instead? Suggest a bright public place!`;
+            return `${careWarmth}Okay, we won't stay alone in a quiet place! Where should we go instead—like a bright café, library, or public lounge?`;
           }
           if (trig.includes("pornography")) {
-            if (alreadyAskedWhere) {
-              return `Instead of "${studentText.trim()}", suggest a healthy activity we can do together right now—like playing basketball, board games, or finishing our study!`;
-            }
-            return `Alright, I won't force you to look at it—tell me why 18+ media is bad for us or suggest what healthy activity we should do instead!`;
+            return `${careWarmth}Alright, I won't force you to look at it—tell me why 18+ media is harmful or suggest a healthy activity we can do instead!`;
           }
-          if (alreadyAskedWhere) {
-            return `Instead of "${studentText.trim()}", name a healthy sport or public activity we can do together—like bowling, cycling, basketball, or going to a café!`;
-          }
-          return `Okay, I'll stop and respect your limits! Since we still have so much energy, what healthy sport or activity can we do together instead?`;
+          return `${careWarmth}Okay, I'll stop and respect your limits! What healthy sport or activity can we do together instead?`;
         }
 
-        // Case C: Student used a coping way from a different scene
+        // Case C: Student only expressed care so far (e.g. "I care about you")
+        if (hasAnyCare && !hasAnyWayOrReason && !hasAnySug) {
+          return `Aw, I know you care about me too! Tell me clearly why this situation is risky and what safe place or activity we should choose instead!`;
+        }
+
+        // Case D: Student used a coping way from a different scene
         if (curParts.usedOtherSceneWay) {
           return `Wait—what you said ("${studentText.trim()}") doesn't match what's happening right now (${step.triggerName})! Tell me how we should handle THIS situation and what we can do instead!`;
         }
@@ -2253,34 +2408,50 @@
         if (curParts.pickedWrongSuggestion) {
           return `⚠️ Careful! In Row 3 ([ suggestion ]), staying for "just ten minutes", watching for "one minute", or going to a "darker corner" is still unsafe! Pick the safe public place or healthy sport instead!`;
         }
-        const combinedWay = curParts.hasWayOrReason || sceneMem.hasWayOrReason;
+
+        const combinedCare = curParts.hasCare || sceneMem.hasCare;
+        const combinedWay = curParts.hasWay || sceneMem.hasWay;
+        const combinedReason = curParts.hasReason || sceneMem.hasReason;
+        const combinedWayOrReason = combinedWay || combinedReason || sceneMem.hasWayOrReason;
         const combinedSug = curParts.hasSuggestion || sceneMem.hasSuggestion;
 
-        if (combinedSug && !combinedWay) {
+        const creditedList = [];
+        if (combinedCare) creditedList.push("[ care ]");
+        if (combinedWay) creditedList.push("[ way to cope ]");
+        if (combinedReason) creditedList.push("[ reason ]");
+        if (combinedSug) creditedList.push("[ suggestion ]");
+        const creditPrefix = creditedList.length > 0 ? `✓ Credited ${creditedList.join(" + ")}! ` : "";
+
+        if (combinedSug && !combinedWayOrReason) {
           if (trig.includes("quiet place")) {
-            return `💬 Good suggestion ("${studentText.trim()}")! Now reply with the [ way to cope ] and [ reason ] (e.g., "We should avoid quiet places because being alone in a quiet room is unsafe")!`;
+            return `💬 ${creditPrefix}Now add [ way to cope ] + [ reason ] (e.g., "We should avoid quiet places because being alone in a quiet room is unsafe")!`;
           }
           if (trig.includes("pornography")) {
-            return `💬 Good alternative! Now tell your partner to turn off/close the 18+ screen because we must "stay away from pornography"!`;
+            return `💬 ${creditPrefix}Now tell your partner to close the 18+ screen because "we must stay away from pornography"!`;
           }
-          return `💬 Great activity idea ("${studentText.trim()}")! Now also state your [ way to cope ] and [ reason ] (e.g., "We must set limits of intimacy because true love respects limits")!`;
+          return `💬 ${creditPrefix}Now add [ way to cope ] + [ reason ] (e.g., "We must set limits of intimacy because true love respects limits")!`;
         }
 
-        if (combinedWay && !combinedSug) {
+        if (combinedWayOrReason && !combinedSug) {
+          const reasonNudge = !combinedReason ? " (and why it is unsafe)" : "";
           if (trig.includes("quiet place")) {
-            return `💬 Good job refusing the quiet place! Now add a [ suggestion ] for a bright public place (e.g., "Let's go to a café / library / public lounge instead!")!`;
+            return `💬 ${creditPrefix}Now add a [ suggestion ] for a bright public place${reasonNudge} — e.g., "Let's go to a café or library instead!"`;
           }
           if (trig.includes("pornography")) {
-            return `💬 Good refusal! Now add why 18+ media is harmful ("it gives wrong ideas about love") or suggest a healthy activity to do instead!`;
+            return `💬 ${creditPrefix}Now add [ reason ] ("18+ media gives wrong ideas about love") or a healthy [ suggestion ]!`;
           }
-          return `💬 Good job setting limits! Now add a [ suggestion ] for a healthy sport or activity (e.g., "Let's play basketball / go bowling / go cycling instead!")!`;
+          return `💬 ${creditPrefix}Now add a [ suggestion ] for a healthy sport or activity${reasonNudge} — e.g., "Let's go bowling / play basketball / go cycling instead!"`;
+        }
+
+        if (combinedCare && !combinedWayOrReason && !combinedSug) {
+          return `💬 ${creditPrefix}Good caring start! Now add [ way to cope ] + [ reason ] + [ suggestion ] to complete your refusal!`;
         }
 
         if (curParts.usedOtherSceneWay) {
           return `⚠️ That Way to Cope is for a different risky situation! For ${step.triggerName}, use "${step.copingWay}" and give a matching suggestion!`;
         }
 
-        if (curParts.wordCount < 5 && sceneMem.turns.length === 0) {
+        if (curParts.wordCount < 4 && sceneMem.turns.length === 0) {
           return `💬 "${studentText.trim()}" is too brief! Speak a fuller reply using: [ care ], but we should [ way to cope ] because [ reason ]. Let's [ suggestion ] instead!`;
         }
 
@@ -2323,50 +2494,34 @@
 
         const scen = SCENARIOS[currentScenarioKey];
         const step = scen.tries[currentTryIdx];
+        const trig = (step.triggerName || "").toLowerCase();
+        const isPornScene = trig.includes("pornography");
         const workerUrl = (workerUrlInput.value || DEFAULT_WORKER_URL).trim();
 
         const toneCheck = checkToneIsRudeOrTooStrict(studentText);
         const curParts = analyzeTurnParts(step, studentText);
+        const giveInCheck = detectUnsafeGiveIn(studentText);
 
         const lowStudent = studentText.toLowerCase().trim();
-        const bareGiveInRx = /^(ok|okay|yes|yeah|yep|sure|alright|why not|let's do it|lets do it|i want to)[.!\s]*$/i;
-        const explicitGiveInRx = /\b(let's go up|lets go up|go to your flat|go to your room|lock the door|let's watch|lets watch|show me|kiss me|touch me|alright let's do it)\b/i;
         const hesitationOrDiscomfortRx = /\b(shy|nervous|embarrassed|scared|afraid|uncomfortable|wait|later|not ready|too fast|too close|too young|under 16|awkward|weird|worry|worried|unsure|hesitate|umm|uhh|hmm)\b/i;
-        const refusalOrSuggestWords = /\b(no|not|don't|dont|do not|stop|never|cannot|can't|cant|refuse|shouldn't|should not|bad|wrong|unsafe|dangerous|avoid|stay away|respect|limit|limits|instead|let's|lets|go to|play|study|sit|walk|cycle|care|like|love|please|sorry|because|hungry|eat|library|cafe|café|lounge|basketball|bowling|cycling|shy|nervous|embarrassed|scared|afraid|uncomfortable|wait|later|not ready|too fast|too close|too young|awkward|weird|worry|worried|unsure)\b/i;
-        const isConditionalJoke = /\b(kiss me|touch me|hold me)\s+(only|when|if|after|once|unless)\b/i.test(lowStudent);
-        const isHesitationOnly = hesitationOrDiscomfortRx.test(lowStudent);
-        const isLocalGiveIn = !isConditionalJoke && !isHesitationOnly && (bareGiveInRx.test(lowStudent) || (explicitGiveInRx.test(lowStudent) && !refusalOrSuggestWords.test(lowStudent)));
-
-        // Check how this turn combines with earlier turns in the same scene (Multi-Turn Memory)
-        const hadPriorTurns = sceneMemory.turns.length > 0;
-        const combinedHasWay = curParts.hasWayOrReason || sceneMemory.hasWayOrReason;
-        const combinedHasSug = curParts.hasSuggestion || sceneMemory.hasSuggestion;
         const hasWrongBuilderChoice = Boolean(curParts.pickedWrongWay || curParts.pickedWrongSuggestion);
-        if (activeInputEntry) {
-          activeInputEntry.hasCare = Boolean(curParts.hasCare);
-          activeInputEntry.hasWayOrReason = Boolean(curParts.hasWayOrReason);
-          activeInputEntry.hasSuggestion = Boolean(curParts.hasSuggestion);
-          activeInputEntry.isValidPart = Boolean(!toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isHesitationOnly && (curParts.hasCare || curParts.hasWayOrReason || curParts.hasSuggestion));
-        }
-        const isSingleTurnFull = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 5;
-        const isMultiTurnComplete = !toneCheck.isRude && !isLocalGiveIn && !hasWrongBuilderChoice && !isSingleTurnFull && hadPriorTurns && combinedHasWay && combinedHasSug && (curParts.hasWayOrReason || curParts.hasSuggestion) && curParts.wordCount >= 1;
+        const isLocalGiveIn = !hasWrongBuilderChoice && giveInCheck.isGiveIn;
+        const isHesitationOnly = !isLocalGiveIn && hesitationOrDiscomfortRx.test(lowStudent) && !curParts.hasWay && !curParts.hasSuggestion;
 
-        // Build rich context so BOTH the existing deployed Worker AND the updated Worker respond spontaneously
-        const priorTurnsDesc = sceneMemory.turns.length > 0
-          ? sceneMemory.turns.map((trn, i) => `Turn ${i + 1}: Student said "${trn.studentText}" -> ${scen.speaker} replied "${trn.partnerReply}"`).join(" | ")
-          : "None (1st attempt on this scene)";
-        const priorPartsDesc = [
-          sceneMemory.hasWayOrReason ? `already gave Way to Cope/Reason ("${sceneMemory.wayAndReasonText}")` : "missing Way to Cope/Reason",
-          sceneMemory.hasSuggestion ? `already gave Suggestion ("${sceneMemory.suggestionText}")` : "missing Suggestion"
-        ].join(", ");
-
-        const enrichedCurrentLine = `${dialogueText.dataset.rawLine || step.line} [Earlier turns in this scene: ${priorTurnsDesc}. Multi-turn state before this reply: ${priorPartsDesc}.]`;
-        const enrichedTargetCopingWay = `${step.copingWay} [LIVE SPONTANEITY RULES: 1) React directly to the student's exact words ("${studentText}")—mention their specific place/sport/excuse/feeling! 2) To get "refused_well", the student must cover BOTH the Way to Cope/Reason AND a safe Suggestion (either in this single sentence OR combined across their earlier turn + this turn). If they only gave one part so far, return "refused_vague", have ${scen.speaker} react naturally to their exact words and ask for the missing part, and have coach_hint praise what they gave and ask for the missing part. 3) If they completed the missing part across two turns, return "refused_well" and in coach_hint say okay and advise them to combine all parts into one full sentence on the 1st try next time! 4) When returning "refused_well", if their suggestion differs from the next scene setting (${step.nextSceneSetting}), have ${scen.speaker} validate their idea ("That's a good idea!") and ask "How about we ${step.nextSceneBridge} instead?" to match the next picture!]`;
-        const enrichedTargetValue = `${step.edbValue} [For final_report_comment, use ultra-short A2 point form (MAX 6 to 8 words per line, giving a specific communication improvement tip rather than repeating the 4 ways to cope): "- SUMMARY: <6-8 words>\n- IMPROVEMENT: <6-8 words>"]`;
+        // Snapshot prior sceneMemory flags BEFORE merging this turn
+        const hadPriorTurns = sceneMemory.turns.length > 0;
+        const priorValidTurns = sceneMemory.turns.filter(trn => trn.decision === "refused_vague").length;
+        const prevWay = sceneMemory.hasWay;
+        const prevReason = sceneMemory.hasReason;
+        const prevSug = sceneMemory.hasSuggestion;
 
         let result = null;
 
-        if (workerUrl) {
+        // Only call Worker if not an obvious wrong Play-Safe chip or immediate local give-in?
+        // Calling Worker (with 15s timeout) lets AI provide bespoke in-character reactions while local safety rules still govern!
+        if (workerUrl && !hasWrongBuilderChoice) {
+          const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+          const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
           try {
             sendBtn.disabled = true;
             sendBtn.textContent = "...";
@@ -2377,14 +2532,20 @@
               tryIndex: step.tryNumber,
               totalTries: scen.totalTries,
               mistakesSoFar: mistakesCount,
-              currentLine: enrichedCurrentLine,
+              currentLine: dialogueText.dataset.rawLine || step.line,
               triggerType: step.triggerName,
-              targetCopingWay: enrichedTargetCopingWay,
-              targetValue: enrichedTargetValue,
+              targetCopingWay: step.copingWay,
+              targetValue: step.edbValue,
               keywords: step.keywords,
               nextSceneSetting: step.nextSceneSetting,
               conversationHistory: sceneMemory.turns,
               sceneState: {
+                hasCare: sceneMemory.hasCare,
+                careText: sceneMemory.careText,
+                hasWay: sceneMemory.hasWay,
+                wayText: sceneMemory.wayText,
+                hasReason: sceneMemory.hasReason,
+                reasonText: sceneMemory.reasonText,
                 hasWayOrReason: sceneMemory.hasWayOrReason,
                 wayAndReasonText: sceneMemory.wayAndReasonText,
                 hasSuggestion: sceneMemory.hasSuggestion,
@@ -2396,7 +2557,8 @@
             const resp = await fetch(workerUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payload),
+              signal: ctrl ? ctrl.signal : undefined
             });
             if (resp.ok) {
               setWorkerDotState("online");
@@ -2410,18 +2572,102 @@
           } catch (e) {
             setWorkerDotState("offline");
           } finally {
+            if (timer) clearTimeout(timer);
             sendBtn.disabled = false;
             sendBtn.textContent = "Send";
           }
         }
 
-        // Reconcile AI Worker response with pedagogical rules WITHOUT wiping out the AI Worker's live character_reaction!
+        // Merge AI Worker's structured `parts_detected` (union) when the turn is safe & polite!
+        const workerFlaggedGiveIn = Boolean(result && (result.decision === "gave_in" || result.triggered_safety_net || result.triggered_bad_ending));
+        if (result && !isLocalGiveIn && !workerFlaggedGiveIn && !toneCheck.isRude && !hasWrongBuilderChoice) {
+          const pd = result.parts_detected;
+          if (pd && typeof pd === "object") {
+            if (pd.care) curParts.hasCare = true;
+            if (pd.way_to_cope) curParts.hasWay = true;
+            if (pd.reason) {
+              curParts.hasReason = true;
+              curParts.hasReasonDetail = true;
+            }
+            if (pd.suggestion) {
+              curParts.hasSuggestion = true;
+              if (!curParts.extractedSuggestion) curParts.extractedSuggestion = cleanStudentInput;
+            }
+          } else if (result.used_coping_way) {
+            curParts.hasWay = true;
+          }
+          curParts.hasWayOrReason = Boolean(curParts.hasWay || curParts.hasReason);
+          if (curParts.hasWayOrReason && !curParts.extractedWay) {
+            curParts.extractedWay = cleanStudentInput;
+          }
+        }
+
+        // Compute combined multi-turn coverage (earlier turns + current turn)
+        const combinedCare = Boolean(sceneMemory.hasCare || curParts.hasCare);
+        const combinedWay = Boolean(sceneMemory.hasWay || curParts.hasWay);
+        const combinedReason = Boolean(sceneMemory.hasReason || curParts.hasReason);
+        const combinedWayOrReason = Boolean(combinedWay || combinedReason || sceneMemory.hasWayOrReason || curParts.hasWayOrReason);
+        const combinedSug = Boolean(sceneMemory.hasSuggestion || curParts.hasSuggestion);
+        const addedNewSubstantivePart = Boolean(
+          (curParts.hasWay && !prevWay) ||
+          (curParts.hasReason && !prevReason) ||
+          (curParts.hasSuggestion && !prevSug)
+        );
+
+        if (activeInputEntry) {
+          activeInputEntry.hasCare = Boolean(curParts.hasCare);
+          activeInputEntry.hasWay = Boolean(curParts.hasWay);
+          activeInputEntry.hasReason = Boolean(curParts.hasReason);
+          activeInputEntry.hasWayOrReason = Boolean(curParts.hasWayOrReason);
+          activeInputEntry.hasSuggestion = Boolean(curParts.hasSuggestion);
+          activeInputEntry.isValidPart = Boolean(
+            !toneCheck.isRude &&
+            !isLocalGiveIn &&
+            !workerFlaggedGiveIn &&
+            !hasWrongBuilderChoice &&
+            (curParts.hasCare || curParts.hasWay || curParts.hasReason || curParts.hasSuggestion)
+          );
+        }
+
+        // Pedagogical pass checks:
+        // 1. Single-turn pass: (Way/Reason + Suggestion), OR Pornography (Way + Reason/Suggestion)
+        const isSingleTurnFull =
+          !toneCheck.isRude &&
+          !isLocalGiveIn &&
+          !workerFlaggedGiveIn &&
+          !hasWrongBuilderChoice &&
+          curParts.wordCount >= 4 &&
+          ((combinedWayOrReason && combinedSug) || (isPornScene && combinedWay && (combinedReason || combinedSug)));
+
+        // 2. Multi-turn pass (zero stalling when student builds across turns!):
+        //    Passes on Turn 2+ if:
+        //    - Combined turns cover (Way/Reason + Suggestion), OR
+        //    - Combined turns cover (Way + Reason) with a newly added part (e.g. Turn 1: Care+Way -> Turn 2: Reason!), OR
+        //    - Student already completed 2 partial safe turns and adds another valid refusal/reason/suggestion on Turn 3+
+        const isMultiTurnComplete =
+          !toneCheck.isRude &&
+          !isLocalGiveIn &&
+          !workerFlaggedGiveIn &&
+          !hasWrongBuilderChoice &&
+          !isSingleTurnFull &&
+          hadPriorTurns &&
+          curParts.wordCount >= 1 &&
+          (
+            (combinedWayOrReason && combinedSug && (curParts.hasWayOrReason || curParts.hasSuggestion)) ||
+            (combinedWay && combinedReason && addedNewSubstantivePart) ||
+            (priorValidTurns >= 2 && combinedWayOrReason && (curParts.hasWayOrReason || curParts.hasSuggestion))
+          );
+
+        // Reconcile AI Worker response with deterministic safety & multi-turn rules
         if (hasWrongBuilderChoice) {
           result = {
             decision: "refused_vague",
             character_reaction: buildSpontaneousVagueReaction(step, studentText, curParts, sceneMemory),
             coach_hint: buildSpontaneousVagueHint(step, studentText, curParts, sceneMemory)
           };
+        } else if (isLocalGiveIn || workerFlaggedGiveIn) {
+          result = result || { decision: "gave_in" };
+          result.decision = "gave_in";
         } else if (toneCheck.isRude) {
           const aiRudeReaction = (result && result.decision === "refused_rude" && result.character_reaction)
             ? result.character_reaction
@@ -2434,7 +2680,7 @@
             character_reaction: aiRudeReaction || step.conflictReaction,
             coach_hint: aiRudeHint
           };
-        } else if (isHesitationOnly && (!curParts.hasWayOrReason || !curParts.hasSuggestion)) {
+        } else if (isHesitationOnly && !isMultiTurnComplete) {
           result = {
             decision: "refused_vague",
             character_reaction: (result && result.decision === "refused_vague" && result.character_reaction)
@@ -2444,18 +2690,15 @@
               ? result.coach_hint
               : `💡 Being shy or uncomfortable is completely normal! Now state your clear limit and suggest a safe activity using: [ care ], but we should [ way to cope ] because [ reason ]. Let's [ suggestion ] instead!`
           };
-        } else if (isLocalGiveIn) {
-          result = result || { decision: "gave_in" };
-          result.decision = "gave_in";
         } else if (!result) {
-          // Offline fallback using multi-turn state and spontaneous helpers
+          // Offline fallback
           if (isSingleTurnFull || isMultiTurnComplete) {
             result = {
               decision: "refused_well",
               completedViaMultiTurn: isMultiTurnComplete,
               character_reaction: ensureSceneBridgeInReaction(step, studentText, sceneMemory, ""),
               coach_hint: isMultiTurnComplete
-                ? `✅ Okay, you completed both parts across two tries! Next time, try combining your [ care ], [ way to cope ] + [ reason ], and [ suggestion ] into one full sentence on your first try!`
+                ? `✅ Good job completing your refusal across tries! Next time, combine [ care ], [ way to cope ] + [ reason ], and [ suggestion ] into one full sentence on your first try!`
                 : `✅ Caring & polite refusal on ${step.label}! Your partner felt respected. Write what you said on your worksheet!`
             };
           } else {
@@ -2466,84 +2709,82 @@
             };
           }
         } else {
-          // We received a live AI Worker response (`result`)!
+          // Live AI Worker response received
           if (result.decision === "refused_rude" && !toneCheck.isRude) {
             result.decision = (isSingleTurnFull || isMultiTurnComplete) ? "refused_well" : "refused_vague";
           }
 
           if (isMultiTurnComplete && result.decision === "refused_vague") {
-            // Student supplied the missing part on Turn 2+ to complete the scene!
             result.decision = "refused_well";
             result.completedViaMultiTurn = true;
             result.character_reaction = ensureSceneBridgeInReaction(step, studentText, sceneMemory, "");
-            result.coach_hint = `✅ Okay, you completed both the Way to Cope/Reason and Suggestion across your tries! Next time, put them together into one full sentence on your first try!`;
+            result.coach_hint = !combinedSug
+              ? `✅ Good job adding a clear reason to refuse! Next time, also suggest a safe activity and combine all 4 parts into one sentence!`
+              : `✅ Good job completing both the refusal and suggestion across your tries! Next time, put all 4 parts into one full sentence on your first try!`;
           } else if (isSingleTurnFull && result.decision === "refused_vague") {
             result.decision = "refused_well";
             result.character_reaction = ensureSceneBridgeInReaction(step, studentText, sceneMemory, "");
           } else if (result.decision === "refused_well" && !isSingleTurnFull && !isMultiTurnComplete) {
-            // Check if the student's reply on Turn 1 is clearly missing either the Way to Cope/Reason OR the Suggestion (e.g. "go to library")
+            // Only hold on Turn 1 if clearly missing a required pillar (e.g. only 1 bucket on Turn 1)
             const clearlyIncompleteFirstTurn = !hadPriorTurns && (
-              curParts.wordCount < 5 ||
-              !curParts.hasWayOrReason ||
-              !curParts.hasSuggestion ||
+              curParts.wordCount < 4 ||
+              !combinedWayOrReason ||
+              (!combinedSug && !(isPornScene && combinedWay && combinedReason)) ||
               curParts.usedOtherSceneWay
             );
-            const aiAcceptedMissingSuggestion = hadPriorTurns && sceneMemory.hasWayOrReason && !sceneMemory.hasSuggestion && !curParts.hasWayOrReason && curParts.wordCount >= 1;
-            const aiAcceptedMissingWay = hadPriorTurns && sceneMemory.hasSuggestion && !sceneMemory.hasWayOrReason && !curParts.hasSuggestion && curParts.wordCount >= 2;
-            if (aiAcceptedMissingSuggestion) {
-              curParts.hasSuggestion = true;
-              if (activeInputEntry) {
-                activeInputEntry.hasSuggestion = true;
-                activeInputEntry.isValidPart = true;
-              }
-              result.completedViaMultiTurn = true;
-            } else if (aiAcceptedMissingWay) {
-              curParts.hasWayOrReason = true;
-              if (activeInputEntry) {
-                activeInputEntry.hasWayOrReason = true;
-                activeInputEntry.isValidPart = true;
-              }
-              result.completedViaMultiTurn = true;
-            }
-            const clearlyIncompleteFollowUp = hadPriorTurns && (!(curParts.hasWayOrReason || sceneMemory.hasWayOrReason) || !(curParts.hasSuggestion || sceneMemory.hasSuggestion));
+            const clearlyIncompleteFollowUp = hadPriorTurns && !combinedWayOrReason && !combinedSug;
             if (clearlyIncompleteFirstTurn || clearlyIncompleteFollowUp) {
               result.decision = "refused_vague";
-              // Replace an accidental "pass" reaction from the AI with a spontaneous follow-up reaction to their exact input
               result.character_reaction = buildSpontaneousVagueReaction(step, studentText, curParts, sceneMemory);
               result.coach_hint = buildSpontaneousVagueHint(step, studentText, curParts, sceneMemory);
+            } else if (hadPriorTurns) {
+              result.completedViaMultiTurn = true;
             }
           }
 
           if (result.decision === "refused_well") {
-            if (isMultiTurnComplete) {
+            if (hadPriorTurns || isMultiTurnComplete) {
               result.completedViaMultiTurn = true;
-              if (!result.coach_hint || !/one full sentence|first try|together/i.test(result.coach_hint)) {
-                result.coach_hint = `✅ Okay, you completed the refusal across your tries! Next time, try combining your [ care ], [ way to cope ] + [ reason ], and [ suggestion ] into one full sentence on your first try!`;
+              if (!result.coach_hint || !/one full sentence|first try|together|next time/i.test(result.coach_hint)) {
+                result.coach_hint = `✅ Good job completing your refusal across tries! Next time, combine [ care ], [ way to cope ] + [ reason ], and [ suggestion ] into one full sentence on your first try!`;
               }
             }
             result.character_reaction = ensureSceneBridgeInReaction(step, studentText, sceneMemory, result.character_reaction);
           }
         }
 
-        // Update multi-turn scene memory with what the student expressed in this turn
-        if (curParts.hasCare) {
-          sceneMemory.hasCare = true;
-          sceneMemory.careText = sceneMemory.careText || curParts.raw;
-        }
-        if (curParts.hasWayOrReason) {
-          sceneMemory.hasWayOrReason = true;
-          sceneMemory.wayAndReasonText = sceneMemory.wayAndReasonText || curParts.extractedWay;
-        }
-        if (curParts.hasReasonDetail) {
-          sceneMemory.hasReasonDetail = true;
-        }
-        if (curParts.hasSuggestion) {
-          sceneMemory.hasSuggestion = true;
-          sceneMemory.suggestionText = sceneMemory.suggestionText || curParts.extractedSuggestion;
+        // Update multi-turn scene memory & live 4-Part Formula Progress UI (only when not a give-in or wrong builder chip)
+        if (result.decision !== "gave_in" && !hasWrongBuilderChoice) {
+          if (curParts.hasCare) {
+            sceneMemory.hasCare = true;
+            sceneMemory.careText = sceneMemory.careText || curParts.raw;
+          }
+          if (curParts.hasWay) {
+            sceneMemory.hasWay = true;
+            sceneMemory.wayText = sceneMemory.wayText || curParts.raw;
+          }
+          if (curParts.hasReason) {
+            sceneMemory.hasReason = true;
+            sceneMemory.hasReasonDetail = true;
+            sceneMemory.reasonText = sceneMemory.reasonText || curParts.raw;
+          }
+          if (curParts.hasWayOrReason) {
+            sceneMemory.hasWayOrReason = true;
+            sceneMemory.wayAndReasonText = sceneMemory.wayAndReasonText || curParts.extractedWay;
+          }
+          if (curParts.hasSuggestion) {
+            sceneMemory.hasSuggestion = true;
+            sceneMemory.suggestionText = sceneMemory.suggestionText || curParts.extractedSuggestion;
+          }
+          updateFormulaProgressUI();
         }
 
         // Case 1: Student gave in to temptation
         if (result.decision === "gave_in" || result.triggered_safety_net || result.triggered_bad_ending) {
+          if (activeInputEntry) {
+            activeInputEntry.status = "invalid";
+            updateStudentReplyDisplay();
+          }
           mistakesCount += 1;
           updateSafetyBadge();
 
@@ -2556,6 +2797,7 @@
             const safetyLine = result.character_reaction && result.character_reaction.toLowerCase().includes("testing")
               ? result.character_reaction
               : step.safetyNetLine;
+            dialogueText.dataset.rawLine = safetyLine;
             dialogueText.textContent = safetyLine;
             speakText(safetyLine, scen.voiceGender);
 
@@ -2597,17 +2839,19 @@
           speakText(hurtLine, scen.voiceGender);
 
           sceneMemory.turns.push({ studentText, partnerReply: hurtLine, decision: "refused_rude" });
+          if (activeInputEntry) {
+            activeInputEntry.status = "invalid";
+            updateStudentReplyDisplay();
+          }
           updateProgressiveHintsUI(step);
           coachText.textContent = sanitizeCoachText(result.coach_hint) || `💢 Too Rude / Strict! Do not scold or use a blunt command—retry politely using: [ care ], but we should [ way to cope ] because [ reason ]. Let's [ suggestion ] instead!`;
           return;
         }
 
-        // Case 2B: Student hesitated or gave a partial/vague refusal -> Switch to Nudge Anime Picture & Keep Multi-Turn Memory!
+        // Case 2B: Student hesitated or gave a partial/vague refusal -> Switch to Nudge Anime Picture & Credit Partial Progress!
         if (result.decision === "refused_vague") {
           hintsUsedCount += 1;
           tryVagueCount += 1;
-          if (!curParts.hasSuggestion && !sceneMemory.hasSuggestion) missingSuggestionCount += 1;
-          if (!curParts.hasReasonDetail && !sceneMemory.hasReasonDetail) missingReasonCount += 1;
           playSfx("warn");
 
           const nextArt = (tryVagueCount % 2 === 1 && step.nudgeImage) ? step.nudgeImage : step.image;
@@ -2624,8 +2868,9 @@
           if (activeInputEntry) {
             activeInputEntry.status = activeInputEntry.isValidPart ? "partial_good" : "invalid";
           }
+          updateStudentReplyDisplay();
           updateProgressiveHintsUI(step);
-          coachText.textContent = hint.startsWith("💡") || hint.startsWith("💬") || hint.startsWith("⚠️") ? hint : `💡 Hint for ${step.label}: ${hint}`;
+          coachText.textContent = hint.startsWith("💡") || hint.startsWith("💬") || hint.startsWith("⚠️") || hint.startsWith("✓") ? hint : `💡 Hint for ${step.label}: ${hint}`;
           return;
         }
 
@@ -2633,22 +2878,25 @@
         if (result.completedViaMultiTurn) {
           splitTurnScenesCount += 1;
         }
-        if (!sceneMemory.hasCare && !curParts.hasCare) {
+        if (!sceneMemory.hasCare) {
           missingCareCount += 1;
         }
-        if (!sceneMemory.hasReasonDetail && !curParts.hasReasonDetail) {
+        if (!sceneMemory.hasReason) {
           missingReasonCount += 1;
+        }
+        if (!sceneMemory.hasSuggestion) {
+          missingSuggestionCount += 1;
         }
 
         playSfx("hit");
         coachText.textContent = sanitizeCoachText(result.coach_hint) || (result.completedViaMultiTurn
-          ? `✅ Okay, you completed both parts across your tries! Next time, put your Way to Cope, Reason, and Suggestion into one full sentence on your first try!`
+          ? `✅ Good job completing your refusal across tries! Next time, put [ care ], [ way to cope ] + [ reason ], and [ suggestion ] into one full sentence on your first try!`
           : `✅ Caring & polite refusal on ${step.label}! Your partner felt respected. Write what you said on your worksheet!`);
 
         if (activeInputEntry) {
           activeInputEntry.status = "winner";
         }
-        const finalIsCompleteAllFour = Boolean(curParts.hasCare && curParts.hasWayOrReason && curParts.hasSuggestion && curParts.wordCount >= 6);
+        const finalIsCompleteAllFour = Boolean(curParts.hasCare && curParts.hasWay && curParts.hasReason && curParts.hasSuggestion && curParts.wordCount >= 6);
         if (result.completedViaMultiTurn || !finalIsCompleteAllFour) {
           currentTryInputs.forEach(item => {
             if (item !== activeInputEntry && (item.status === "partial_good" || item.isValidPart)) {
